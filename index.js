@@ -20,9 +20,13 @@ mongoose.connect(process.env.MONGO_URI)
 
 // Importar rutas
 const authRoutes = require('./routes/authRoutes');
+const categoriaRoutes = require('./routes/categoriaRoutes');
+const movimientoRoutes = require('./routes/movimientoRoutes');
 
 // Usar rutas
 app.use('/api/auth', authRoutes);
+app.use('/api/categorias', categoriaRoutes);
+app.use('/api/movimientos', movimientoRoutes);
 
 // Ruta de prueba de la API
 app.get('/api', (req, res) => {
