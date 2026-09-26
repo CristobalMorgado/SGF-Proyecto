@@ -7,8 +7,296 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>SGF — Sistema de Gestión Financiera Familiar</h1>
-  <p>Proyecto en construcción...</p>
+
+  <!-- ========== PANTALLA DE AUTENTICACIÓN ========== -->
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-card">
+      <h1 class="auth-logo">SGF</h1>
+      <p class="auth-subtitle">Sistema de Gestión Financiera Familiar</p>
+
+      <!-- Tabs Login / Registro -->
+      <div class="auth-tabs">
+        <button class="auth-tab active" onclick="showAuthTab('login')">Iniciar Sesión</button>
+        <button class="auth-tab" onclick="showAuthTab('registro')">Registrarse</button>
+      </div>
+
+      <!-- Formulario Login -->
+      <form id="form-login" class="auth-form" onsubmit="handleLogin(event)">
+        <div class="input-group">
+          <label for="login-email">Correo electrónico</label>
+          <input type="email" id="login-email" placeholder="tu@correo.com" required>
+        </div>
+        <div class="input-group">
+          <label for="login-password">Contraseña</label>
+          <input type="password" id="login-password" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn-primary">Ingresar</button>
+        <p id="login-error" class="auth-error"></p>
+      </form>
+
+      <!-- Formulario Registro -->
+      <form id="form-registro" class="auth-form" style="display:none" onsubmit="handleRegistro(event)">
+        <div class="input-group">
+          <label for="reg-nombre">Nombre completo</label>
+          <input type="text" id="reg-nombre" placeholder="Ej: Juan Pérez" required>
+        </div>
+        <div class="input-group">
+          <label for="reg-email">Correo electrónico</label>
+          <input type="email" id="reg-email" placeholder="tu@correo.com" required>
+        </div>
+        <div class="input-group">
+          <label for="reg-password">Contraseña</label>
+          <input type="password" id="reg-password" placeholder="Mínimo 4 caracteres" required minlength="4">
+        </div>
+        <div class="input-group">
+          <label for="reg-grupo">Nombre del grupo familiar</label>
+          <input type="text" id="reg-grupo" placeholder="Ej: Familia Pérez">
+        </div>
+        <button type="submit" class="btn-primary">Crear Cuenta</button>
+        <p id="registro-error" class="auth-error"></p>
+        <p id="registro-success" class="auth-success"></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========== APLICACIÓN PRINCIPAL ========== -->
+  <div id="app" class="app" style="display:none">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <h2>SGF</h2>
+      </div>
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-section="dashboard" onclick="navigateTo('dashboard')">
+          <span class="nav-icon"></span> Dashboard
+        </button>
+        <button class="nav-item" data-section="ingresos" onclick="navigateTo('ingresos')">
+          <span class="nav-icon"></span> Ingresos
+        </button>
+        <button class="nav-item" data-section="gastos" onclick="navigateTo('gastos')">
+          <span class="nav-icon"></span> Gastos
+        </button>
+        <button class="nav-item" data-section="categorias" onclick="navigateTo('categorias')">
+          <span class="nav-icon"></span> Categorías
+        </button>
+        <button class="nav-item" id="btn-nav-familia" data-section="familia" onclick="navigateTo('familia')" style="display:none">
+          <span class="nav-icon"></span> Mi Familia
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="nav-item logout-btn" onclick="logout()">
+          <span class="nav-icon"></span> Cerrar Sesión
+        </button>
+      </div>
+    </aside>
+
+    <!-- Contenido Principal -->
+    <main class="main-content">
+
+      <!-- Header -->
+      <header class="top-header">
+        <h1 id="section-title">Dashboard</h1>
+        <div class="header-user">
+          <span id="user-name">Usuario</span>
+          <span id="user-role" class="role-badge">Miembro</span>
+        </div>
+      </header>
+
+      <!-- ===== Sección: DASHBOARD ===== -->
+      <section id="section-dashboard" class="section">
+        <!-- Tarjetas de Resumen -->
+        <div class="summary-cards">
+          <div class="card card-ingresos">
+            <p class="card-label">Total Ingresos</p>
+            <h2 class="card-value" id="total-ingresos">$0</h2>
+          </div>
+          <div class="card card-gastos">
+            <p class="card-label">Total Gastos</p>
+            <h2 class="card-value" id="total-gastos">$0</h2>
+          </div>
+          <div class="card card-saldo">
+            <p class="card-label">Saldo Disponible</p>
+            <h2 class="card-value" id="saldo-total">$0</h2>
+            <p id="alerta-deficit" class="alerta-deficit" style="display:none">⚠️ Déficit detectado</p>
+          </div>
+        </div>
+
+        <!-- Últimos Movimientos -->
+        <div class="dashboard-grid">
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Últimos Movimientos</h3>
+              <button class="btn-accent" onclick="openModal()">+ Nuevo</button>
+            </div>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Concepto</th>
+                    <th>Categoría</th>
+                    <th>Método</th>
+                    <th>Monto</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="tabla-movimientos">
+                  <!-- Se llena dinámicamente -->
+                </tbody>
+              </table>
+              <p id="sin-movimientos" class="empty-msg" style="display:none">No hay movimientos registrados aún.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Sección: INGRESOS ===== -->
+      <section id="section-ingresos" class="section" style="display:none">
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Todos los Ingresos</h3>
+            <button class="btn-accent" onclick="openModal('Ingreso')">+ Nuevo Ingreso</button>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Concepto</th>
+                  <th>Categoría</th>
+                  <th>Método</th>
+                  <th>Monto</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-ingresos"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Sección: GASTOS ===== -->
+      <section id="section-gastos" class="section" style="display:none">
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Todos los Gastos</h3>
+            <button class="btn-accent" onclick="openModal('Gasto')">+ Nuevo Gasto</button>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Concepto</th>
+                  <th>Categoría</th>
+                  <th>Método</th>
+                  <th>Monto</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-gastos"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Sección: CATEGORÍAS ===== -->
+      <section id="section-categorias" class="section" style="display:none">
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Gestión de Categorías</h3>
+            <button class="btn-accent" onclick="openModalCategoria()">+ Nueva Categoría</button>
+          </div>
+          <div class="categorias-grid" id="categorias-grid">
+            <!-- Se llena dinámicamente -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Sección: MI FAMILIA ===== -->
+      <section id="section-familia" class="section" style="display:none">
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Miembros del Grupo Familiar</h3>
+          </div>
+          <p class="empty-msg">Funcionalidad disponible próximamente (Fase 2).</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ========== MODAL: NUEVO / EDITAR MOVIMIENTO ========== -->
+  <div id="modal-movimiento" class="modal-overlay" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-titulo">Nuevo Movimiento</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <form id="form-movimiento" onsubmit="handleMovimiento(event)">
+        <input type="hidden" id="mov-id">
+        <div class="input-group">
+          <label for="mov-tipo">Tipo</label>
+          <select id="mov-tipo" required>
+            <option value="Ingreso">Ingreso</option>
+            <option value="Gasto">Gasto</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label for="mov-concepto">Concepto</label>
+          <input type="text" id="mov-concepto" placeholder="Ej: Sueldo mensual" required>
+        </div>
+        <div class="input-group">
+          <label for="mov-monto">Monto ($)</label>
+          <input type="number" id="mov-monto" placeholder="50000" min="1" required>
+        </div>
+        <div class="input-group">
+          <label for="mov-categoria">Categoría</label>
+          <select id="mov-categoria" required>
+            <!-- Se llena dinámicamente -->
+          </select>
+        </div>
+        <div class="input-group">
+          <label for="mov-metodo">Método de pago</label>
+          <select id="mov-metodo" required>
+            <option value="Efectivo">Efectivo</option>
+            <option value="Transferencia">Transferencia</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label for="mov-fecha">Fecha</label>
+          <input type="date" id="mov-fecha" required>
+        </div>
+        <button type="submit" class="btn-primary">Guardar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========== MODAL: NUEVA CATEGORÍA ========== -->
+  <div id="modal-categoria" class="modal-overlay" style="display:none">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Nueva Categoría</h3>
+        <button class="modal-close" onclick="closeModalCategoria()">&times;</button>
+      </div>
+      <form id="form-categoria" onsubmit="handleCategoria(event)">
+        <div class="input-group">
+          <label for="cat-nombre">Nombre</label>
+          <input type="text" id="cat-nombre" placeholder="Ej: Alimentación" required>
+        </div>
+        <div class="input-group">
+          <label for="cat-tipo">Tipo</label>
+          <select id="cat-tipo" required>
+            <option value="Ingreso">Ingreso</option>
+            <option value="Gasto">Gasto</option>
+          </select>
+        </div>
+        <button type="submit" class="btn-primary">Crear Categoría</button>
+      </form>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>
