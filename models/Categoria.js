@@ -11,6 +11,10 @@ const categoriaSchema = new mongoose.Schema({
     enum: ['Ingreso', 'Gasto'],
     required: true
   },
+  presupuestoMensual: { // Tope presupuestario para la categoría (HU08)
+    type: Number,
+    default: 0
+  },
   grupoId: { // Usamos grupoId para que las categorías sean compartidas por la familia
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Grupo',

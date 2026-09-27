@@ -16,7 +16,7 @@ router.get('/', auth, async (req, res) => {
 // [POST] /api/categorias - Crear nueva categoría para el grupo
 router.post('/', auth, async (req, res) => {
   try {
-    const { nombre, tipo } = req.body;
+    const { nombre, tipo, presupuestoMensual } = req.body;
 
     if (!nombre || !tipo) {
       return res.status(400).json({ mensaje: 'Nombre y tipo (Ingreso/Gasto) son obligatorios.' });
@@ -25,6 +25,7 @@ router.post('/', auth, async (req, res) => {
     const nuevaCategoria = new Categoria({
       nombre,
       tipo,
+      presupuestoMensual: presupuestoMensual || 0,
       grupoId: req.usuario.grupoId,
       creadoPor: req.usuario.id
     });
