@@ -23,12 +23,14 @@ const authRoutes = require('./routes/authRoutes');
 const categoriaRoutes = require('./routes/categoriaRoutes');
 const movimientoRoutes = require('./routes/movimientoRoutes');
 const usuarioRoutes = require('./routes/usuarioRoutes');
+const grupoRoutes = require('./routes/grupoRoutes');
 
 // Usar rutas
 app.use('/api/auth', authRoutes);
 app.use('/api/categorias', categoriaRoutes);
 app.use('/api/movimientos', movimientoRoutes);
 app.use('/api/usuarios', usuarioRoutes);
+app.use('/api/grupos', grupoRoutes);
 
 // Ruta de prueba de la API
 app.get('/api', (req, res) => {

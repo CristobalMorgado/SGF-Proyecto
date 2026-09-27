@@ -626,3 +626,7 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* HU05 - Membresia Solo Lectura */
+.readonly-mode .btn-accent, .readonly-mode .btn-primary, .readonly-mode .btn-action { display: none !important; }
+.readonly-mode .btn-secondary { display: flex !important; } /* Permitir exportar excel */

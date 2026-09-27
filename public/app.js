@@ -148,11 +148,15 @@ function onLoginSuccess() {
     document.getElementById('btn-nav-familia').style.display = 'flex';
   }
 
+  // Verificar membresia antes de cargar todo
+  checkMembresia();
+
   // Cargar datos del dashboard
   loadDashboard();
 }
 
 function logout() {
+  document.body.classList.remove('readonly-mode');
   token = null;
   userInfo = null;
   localStorage.removeItem('sgf_token');
@@ -758,5 +762,116 @@ function renderAlertasPresupuesto() {
 
   if (alertasHtml) {
     container.innerHTML = alertasHtml;
+  }
+}
+
+// ========================================
+// EXPORTACIÓN A EXCEL (HU09)
+// ========================================
+
+function exportarExcel() {
+  if (allMovimientos.length === 0) {
+    alert('No hay movimientos para exportar.');
+    return;
+  }
+
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+
+  // Filtrar movimientos del mes actual
+  const movMes = allMovimientos.filter(m => {
+    const d = new Date(m.fecha);
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
+
+  if (movMes.length === 0) {
+    alert('No hay movimientos este mes para exportar.');
+    return;
+  }
+
+  // Crear la matriz de datos para Excel
+  const worksheetData = [
+    ["Fecha", "Tipo", "Categoría", "Método", "Concepto", "Monto"]
+  ];
+
+  movMes.forEach(m => {
+    worksheetData.push([
+      formatFecha(m.fecha),
+      m.tipo,
+      m.categoriaId ? (m.categoriaId.nombre || 'Sin Categoría') : 'Sin Categoría',
+      m.metodo,
+      m.concepto || '',
+      m.monto
+    ]);
+  });
+
+  // Generar el archivo .xlsx usando SheetJS
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(worksheetData);
+  
+  // Ajustar el ancho de las columnas para que se vea ordenado
+  ws['!cols'] = [
+    { wch: 12 }, // Fecha
+    { wch: 10 }, // Tipo
+    { wch: 20 }, // Categoría
+    { wch: 15 }, // Método
+    { wch: 30 }, // Concepto
+    { wch: 12 }  // Monto
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, "Reporte_Mensual");
+
+  const nombreMeses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  XLSX.writeFile(wb, `Reporte_Financiero_${nombreMeses[currentMonth]}_${currentYear}.xlsx`);
+}
+
+// ========================================
+// CONTROL DE MEMBRESÍA (HU05)
+// ========================================
+
+async function checkMembresia() {
+  try {
+    const res = await authFetch('/api/grupos/me');
+    if (!res) return;
+    if (!res.ok) {
+      document.getElementById('badge-membresia').textContent = 'Error de Servidor (Reinicia Node)';
+      return;
+    }
+    const grupo = await res.json();
+    
+    const modal = document.getElementById('modal-membresia-vencida');
+    const badge = document.getElementById('badge-membresia');
+    const botonesAccion = document.querySelectorAll('#app .btn-accent, #app .btn-primary, #app .btn-action');
+    
+    // Calcular días restantes
+    const hoy = new Date();
+    const vencimiento = new Date(grupo.fechaVencimiento);
+    const msDiff = vencimiento.getTime() - hoy.getTime();
+    const diasRestantes = Math.ceil(msDiff / (1000 * 3600 * 24));
+
+    if (grupo.estadoMembresia === 'Vencida' || diasRestantes <= 0) {
+      // Bloqueo Estricto (SaaS Read-Only)
+      if (modal) modal.style.display = 'flex';
+      badge.style.background = 'rgba(239, 68, 68, 0.2)';
+      badge.style.color = '#ef4444';
+      badge.textContent = 'Membresía Vencida';
+      
+      // Ocultar botones de agregar, editar, eliminar
+      botonesAccion.forEach(btn => btn.style.display = 'none');
+      // Asegurar modo lectura en toda la app
+      document.body.classList.add('readonly-mode');
+    } else {
+      // Plan Activo
+      if (modal) modal.style.display = 'none';
+      badge.style.background = 'rgba(16, 185, 129, 0.2)';
+      badge.style.color = '#10b981';
+      badge.textContent = `Plan Activo (${diasRestantes} días)`;
+      
+      // Mostrar botones de acción
+      botonesAccion.forEach(btn => btn.style.display = ''); // Restaurar
+      document.body.classList.remove('readonly-mode');
+    }
+  } catch (err) {
+    console.error('Error verificando membresía', err);
   }
 }
