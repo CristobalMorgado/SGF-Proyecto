@@ -10,15 +10,29 @@ router.post('/registro', async (req, res) => {
   try {
     const { nombre, email, password, nombreGrupo } = req.body;
 
+    const nombreLimpio = nombre ? String(nombre).trim() : '';
+    if (!nombreLimpio || nombreLimpio.length < 2) {
+      return res.status(400).json({ mensaje: 'El nombre debe tener al menos 2 caracteres.' });
+    }
+
+    const emailLimpio = email ? String(email).trim().toLowerCase() : '';
+    if (!emailLimpio || !emailLimpio.includes('@')) {
+      return res.status(400).json({ mensaje: 'Ingresa un correo electrónico válido.' });
+    }
+
+    if (!password || String(password).length < 6) {
+      return res.status(400).json({ mensaje: 'La contraseña debe tener al menos 6 caracteres.' });
+    }
+
     // 1. Verificar si el email ya está en uso
-    let usuarioExiste = await Usuario.findOne({ email });
+    let usuarioExiste = await Usuario.findOne({ email: emailLimpio });
     if (usuarioExiste) {
-      return res.status(400).json({ mensaje: 'El usuario ya está registrado' });
+      return res.status(400).json({ mensaje: 'El correo electrónico ya está registrado.' });
     }
 
     // 2. Crear el Grupo Familiar para el usuario
     const nuevoGrupo = new Grupo({
-      nombre: nombreGrupo || `Familia de ${nombre}`
+      nombre: (nombreGrupo && String(nombreGrupo).trim()) || `Familia de ${nombreLimpio}`
     });
     const grupoGuardado = await nuevoGrupo.save();
 
@@ -28,8 +42,8 @@ router.post('/registro', async (req, res) => {
 
     // 4. Crear el Usuario como Administrador de este nuevo grupo
     const nuevoUsuario = new Usuario({
-      nombre,
-      email,
+      nombre: nombreLimpio,
+      email: emailLimpio,
       password: passwordHash,
       rol: 'Administrador',
       grupoId: grupoGuardado._id
@@ -62,8 +76,10 @@ router.post('/login', async (req, res) => {
     // 3. Crear el Token JWT con los datos relevantes (ID, Grupo y Rol)
     const payload = {
       id: usuario._id,
+      nombre: usuario.nombre,
       grupoId: usuario.grupoId,
-      rol: usuario.rol
+      rol: usuario.rol,
+      avatar: usuario.avatar || 'default'
     };
 
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '8h' });

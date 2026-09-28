@@ -18,7 +18,7 @@ const movimientoSchema = new mongoose.Schema({
   },
   metodo: {
     type: String,
-    enum: ['Efectivo', 'Transferencia'],
+    enum: ['Efectivo', 'Transferencia', 'Tarjeta'],
     required: true
   },
   concepto: {

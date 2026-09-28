@@ -36,4 +36,27 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+
+// [POST] /api/grupos/simular-pago - Simular la renovación de la membresía
+router.post('/simular-pago', auth, async (req, res) => {
+  try {
+    const grupo = await Grupo.findById(req.usuario.grupoId);
+    if (!grupo) {
+      return res.status(404).json({ mensaje: 'Grupo no encontrado' });
+    }
+
+    // Agregar 30 días a la fecha actual
+    const nuevaFecha = new Date();
+    nuevaFecha.setDate(nuevaFecha.getDate() + 30);
+
+    grupo.fechaVencimiento = nuevaFecha;
+    grupo.estadoMembresia = 'Activa';
+    await grupo.save();
+
+    res.json({ mensaje: 'Pago simulado con éxito', fechaVencimiento: nuevaFecha });
+  } catch (error) {
+    res.status(500).json({ mensaje: 'Error al simular el pago', error: error.message });
+  }
+});
+
 module.exports = router;

@@ -27,8 +27,22 @@ router.post('/', auth, isAdmin, async (req, res) => {
   try {
     const { nombre, email, password } = req.body;
 
+    const nombreLimpio = nombre ? String(nombre).trim() : '';
+    if (!nombreLimpio || nombreLimpio.length < 2) {
+      return res.status(400).json({ mensaje: 'El nombre del miembro debe tener al menos 2 caracteres.' });
+    }
+
+    const emailLimpio = email ? String(email).trim().toLowerCase() : '';
+    if (!emailLimpio || !emailLimpio.includes('@')) {
+      return res.status(400).json({ mensaje: 'Debes proporcionar un correo electrónico válido.' });
+    }
+
+    if (!password || String(password).length < 6) {
+      return res.status(400).json({ mensaje: 'La contraseña provisional debe tener al menos 6 caracteres.' });
+    }
+
     // Verificar si el correo ya existe
-    let usuarioExiste = await Usuario.findOne({ email });
+    let usuarioExiste = await Usuario.findOne({ email: emailLimpio });
     if (usuarioExiste) {
       return res.status(400).json({ mensaje: 'El correo electrónico ya está registrado.' });
     }
@@ -39,8 +53,8 @@ router.post('/', auth, isAdmin, async (req, res) => {
 
     // Crear al miembro
     const nuevoUsuario = new Usuario({
-      nombre,
-      email,
+      nombre: nombreLimpio,
+      email: emailLimpio,
       password: passwordHash,
       rol: 'Miembro',
       grupoId: req.usuario.grupoId
@@ -73,6 +87,81 @@ router.delete('/:id', auth, isAdmin, async (req, res) => {
     res.json({ mensaje: 'Miembro eliminado correctamente' });
   } catch (error) {
     res.status(500).json({ mensaje: 'Error al eliminar miembro', error: error.message });
+  }
+});
+
+
+// [PUT] /api/usuarios/me - Actualizar perfil propio
+router.put('/me', auth, async (req, res) => {
+  try {
+    const { nombre, password, currentPassword, avatar } = req.body;
+    const usuario = await Usuario.findById(req.usuario.id);
+
+    if (nombre) {
+      const nombreLimpio = String(nombre).trim();
+      if (nombreLimpio.length >= 2) usuario.nombre = nombreLimpio;
+    }
+
+    if (avatar && ['padre', 'madre', 'hijo', 'default'].includes(avatar)) {
+      usuario.avatar = avatar;
+    }
+
+    if (password) {
+      const bcrypt = require('bcryptjs');
+      if (!currentPassword) {
+         return res.status(400).json({ mensaje: 'Debes ingresar tu contraseña actual para poder cambiarla.' });
+      }
+      const isMatch = await bcrypt.compare(currentPassword, usuario.password);
+      if (!isMatch) {
+         return res.status(400).json({ mensaje: 'La contraseña actual es incorrecta.' });
+      }
+      if (password.length < 6) {
+        return res.status(400).json({ mensaje: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+      }
+      const salt = await bcrypt.genSalt(10);
+      usuario.password = await bcrypt.hash(password, salt);
+    }
+
+    await usuario.save();
+    res.json({ mensaje: 'Perfil actualizado con éxito', nombre: usuario.nombre, avatar: usuario.avatar });
+  } catch (error) {
+    res.status(500).json({ mensaje: 'Error al actualizar perfil', error: error.message });
+  }
+});
+
+
+// [GET] /api/usuarios/me - Obtener mis datos
+router.get('/me', auth, async (req, res) => {
+  try {
+    const usuario = await Usuario.findById(req.usuario.id).select('-password');
+    res.json({ usuario });
+  } catch (error) {
+    res.status(500).json({ mensaje: 'Error al obtener datos', error: error.message });
+  }
+});
+
+
+// [PUT] /api/usuarios/:id/reset-password - Restablecer contraseña (Solo Admin / SysAdmin)
+router.put('/:id/reset-password', auth, isAdmin, async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ mensaje: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+    }
+
+    const usuario = await Usuario.findOne({ _id: req.params.id, grupoId: req.usuario.grupoId });
+    if (!usuario) {
+      return res.status(404).json({ mensaje: 'Usuario no encontrado en tu grupo.' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    usuario.password = await bcrypt.hash(newPassword, salt);
+    await usuario.save();
+
+    res.json({ mensaje: `Contraseña de ${usuario.nombre} restablecida con éxito.` });
+  } catch (error) {
+    res.status(500).json({ mensaje: 'Error al restablecer contraseña', error: error.message });
   }
 });
 

@@ -6,6 +6,8 @@ const API = ''; // Mismo origen (vacío = relativo al servidor)
 let token = null;
 let userInfo = null; // { id, grupoId, rol }
 let allMovimientos = [];
+let globalMonth = new Date().getMonth();
+let globalYear = new Date().getFullYear();
 let allCategorias = [];
 
 // ========================================
@@ -34,15 +36,27 @@ function formatMonto(n) {
 
 // Formatear fecha a DD/MM/AAAA
 function formatFecha(fechaStr) {
+  if (!fechaStr) return '-';
   const d = new Date(fechaStr);
   return d.toLocaleDateString('es-CL');
+}
+
+// Formatear hora a HH:MM (ej: 17:44)
+function formatHora(fechaStr) {
+  if (!fechaStr) return '-';
+  const d = new Date(fechaStr);
+  return d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 // Decodificar payload del token JWT
 function decodeToken(t) {
   try {
-    const payload = JSON.parse(atob(t.split('.')[1]));
-    return payload;
+    const base64Url = t.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
   } catch {
     return null;
   }
@@ -109,6 +123,19 @@ async function handleRegistro(e) {
   errorEl.textContent = '';
   successEl.textContent = '';
 
+  if (nombre.length < 2) {
+    errorEl.textContent = 'El nombre debe tener al menos 2 caracteres.';
+    return;
+  }
+  if (!email.includes('@')) {
+    errorEl.textContent = 'Ingresa un correo electrónico válido.';
+    return;
+  }
+  if (password.length < 6) {
+    errorEl.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+    return;
+  }
+
   try {
     const res = await fetch(`${API}/api/auth/registro`, {
       method: 'POST',
@@ -140,26 +167,48 @@ function onLoginSuccess() {
   document.getElementById('app').style.display = 'flex';
 
   // Configurar UI según rol
-  document.getElementById('user-name').textContent = `ID: ${userInfo.id.slice(-6)}`;
+  document.getElementById('user-name').textContent = userInfo.nombre || 'Usuario';
+  renderUserAvatar(userInfo.avatar || 'default');
   const rolBadge = document.getElementById('user-role');
   rolBadge.textContent = userInfo.rol;
+
+  const btnExcel = document.getElementById('btn-exportar-excel');
+  const btnFamilia = document.getElementById('btn-nav-familia');
+
+  document.body.dataset.rol = userInfo.rol;
+
   if (userInfo.rol === 'Administrador') {
+    if (btnExcel) btnExcel.style.display = 'inline-flex';
+    if (btnFamilia) btnFamilia.style.display = 'flex';
     rolBadge.classList.add('admin');
-    document.getElementById('btn-nav-familia').style.display = 'flex';
+  } else {
+    if (btnExcel) btnExcel.style.display = 'none';
+    if (btnFamilia) btnFamilia.style.display = 'none';
+    rolBadge.classList.remove('admin');
   }
 
   // Verificar membresia antes de cargar todo
   checkMembresia();
 
   // Cargar datos del dashboard
-  loadDashboard();
+  inicializarFiltroMes(); navigateTo('dashboard'); loadDashboard();
 }
 
 function logout() {
   document.body.classList.remove('readonly-mode');
+  document.body.removeAttribute('data-rol');
+  renderUserAvatar('default');
   token = null;
   userInfo = null;
   localStorage.removeItem('sgf_token');
+
+  const btnExcel = document.getElementById('btn-exportar-excel');
+  if (btnExcel) btnExcel.style.display = 'none';
+  const btnFamilia = document.getElementById('btn-nav-familia');
+  if (btnFamilia) btnFamilia.style.display = 'none';
+  const rolBadge = document.getElementById('user-role');
+  if (rolBadge) rolBadge.classList.remove('admin');
+
   document.getElementById('app').style.display = 'none';
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('form-login').reset();
@@ -197,6 +246,7 @@ function navigateTo(section) {
   document.querySelectorAll('.section').forEach(s => s.style.display = 'none');
   // Mostrar la sección elegida
   document.getElementById(`section-${section}`).style.display = 'block';
+  
 
   // Actualizar botón activo en sidebar
   document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
@@ -207,7 +257,7 @@ function navigateTo(section) {
   document.getElementById('section-title').textContent = sectionTitles[section] || section;
 
   // Cargar datos según la sección
-  if (section === 'dashboard') loadDashboard();
+  if (section === 'dashboard') inicializarFiltroMes(); loadDashboard();
   if (section === 'ingresos') renderFilteredTable('Ingreso', 'tabla-ingresos');
   if (section === 'gastos') renderFilteredTable('Gasto', 'tabla-gastos');
   if (section === 'categorias') loadCategorias();
@@ -219,34 +269,37 @@ function navigateTo(section) {
 // ========================================
 
 async function loadDashboard() {
-  await Promise.all([loadResumen(), loadMovimientos(), loadCategorias()]);
+  await Promise.all([loadMovimientos(), loadCategorias()]);
+  await loadResumen(); // ahora local
   renderMovimientosTable();
   renderGraficos();
   renderAlertasPresupuesto();
 }
 
 async function loadResumen() {
-  try {
-    const res = await authFetch('/api/movimientos/resumen');
-    if (!res) return;
-    const data = await res.json();
+  const currentMonth = globalMonth;
+  const currentYear = globalYear;
+  
+  const movMes = allMovimientos.filter(m => {
+    const d = new Date(m.fecha);
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
 
-    document.getElementById('total-ingresos').textContent = formatMonto(data.totalIngresos);
-    document.getElementById('total-gastos').textContent = formatMonto(data.totalGastos);
-    document.getElementById('saldo-total').textContent = formatMonto(data.saldoTotal);
+  const totalIngresos = movMes.filter(m => m.tipo === 'Ingreso').reduce((acc, m) => acc + m.monto, 0);
+  const totalGastos = movMes.filter(m => m.tipo === 'Gasto').reduce((acc, m) => acc + m.monto, 0);
+  const saldoTotal = totalIngresos - totalGastos;
+  const alertaDeficit = saldoTotal < 0;
 
-    const alertaEl = document.getElementById('alerta-deficit');
-    alertaEl.style.display = data.alertaDeficit ? 'block' : 'none';
+  document.getElementById('total-ingresos').textContent = formatMonto(totalIngresos);
+  document.getElementById('total-gastos').textContent = formatMonto(totalGastos);
+  document.getElementById('saldo-total').textContent = formatMonto(saldoTotal);
 
-    // Cambiar color del saldo si hay déficit
-    const saldoEl = document.getElementById('saldo-total');
-    if (data.saldoTotal < 0) {
-      saldoEl.style.color = '#ef4444';
-    } else {
-      saldoEl.style.color = '#3b82f6';
-    }
-  } catch (err) {
-    console.error('Error al cargar resumen:', err);
+  const alertaEl = document.getElementById('alerta-deficit');
+  if (alertaEl) alertaEl.style.display = alertaDeficit ? 'block' : 'none';
+
+  const saldoEl = document.getElementById('saldo-total');
+  if (saldoEl) {
+    saldoEl.style.color = saldoTotal < 0 ? '#ef4444' : '#3b82f6';
   }
 }
 
@@ -279,21 +332,35 @@ function renderMovimientosTable() {
   const tbody = document.getElementById('tabla-movimientos');
   const emptyMsg = document.getElementById('sin-movimientos');
 
-  if (allMovimientos.length === 0) {
+  const currentMonth = globalMonth;
+  const currentYear = globalYear;
+  
+  const movMes = allMovimientos.filter(m => {
+    const d = new Date(m.fecha);
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
+
+  if (movMes.length === 0) {
     tbody.innerHTML = '';
     emptyMsg.style.display = 'block';
     return;
   }
 
   emptyMsg.style.display = 'none';
-  tbody.innerHTML = allMovimientos.map(m => buildMovRow(m)).join('');
+  // En el dashboard, limitamos a los últimos 10 del mes (o todos los del mes)
+  tbody.innerHTML = movMes.slice(0, 15).map(m => buildMovRow(m)).join('');
 }
 
 function renderFilteredTable(tipo, tbodyId) {
-  const filtered = allMovimientos.filter(m => m.tipo === tipo);
+  const currentMonth = globalMonth;
+  const currentYear = globalYear;
+  const filtered = allMovimientos.filter(m => {
+    const d = new Date(m.fecha);
+    return m.tipo === tipo && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
   const tbody = document.getElementById(tbodyId);
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#64748b; padding:24px;">No hay ${tipo.toLowerCase()}s registrados.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#64748b; padding:24px;">No hay ${tipo.toLowerCase()}s registrados.</td></tr>`;
     return;
   }
   tbody.innerHTML = filtered.map(m => buildMovRow(m)).join('');
@@ -301,20 +368,28 @@ function renderFilteredTable(tipo, tbodyId) {
 
 function buildMovRow(m) {
   const catNombre = m.categoriaId ? m.categoriaId.nombre : 'Sin categoría';
+  const usuarioNombre = m.usuarioId ? (m.usuarioId.nombre || m.usuarioId.email || 'Usuario') : 'Usuario';
+  const userAvatar = m.usuarioId && ['padre', 'madre', 'hijo'].includes(m.usuarioId.avatar)
+    ? `<img src="/avatars/${m.usuarioId.avatar}.jpg" style="width:20px; height:20px; border-radius:50%; object-fit:cover; margin-right:6px; vertical-align:-4px; border:1px solid #3b82f6;">`
+    : `<i class="ph ph-user" style="font-size:12px; margin-right:4px; color:#3b82f6;"></i>`;
   const montoClass = m.tipo === 'Ingreso' ? 'monto-ingreso' : 'monto-gasto';
   const signo = m.tipo === 'Ingreso' ? '+' : '-';
-  const metodoClass = m.metodo === 'Efectivo' ? 'metodo-efectivo' : 'metodo-transferencia';
+  let metodoClass = 'metodo-transferencia';
+  if (m.metodo === 'Efectivo') metodoClass = 'metodo-efectivo';
+  else if (m.metodo === 'Tarjeta') metodoClass = 'metodo-tarjeta';
 
   return `
     <tr>
       <td>${formatFecha(m.fecha)}</td>
-      <td>${m.concepto}</td>
+      <td><span style="color:#94a3b8; font-size:12px; font-weight:600;"><i class="ph ph-clock" style="margin-right:3px; vertical-align:-1px;"></i>${formatHora(m.fecha)}</span></td>
+      <td><span style="font-weight:600; color:var(--text-color); font-size:13px;">${userAvatar}${usuarioNombre}</span></td>
       <td>${catNombre}</td>
+      <td>${m.concepto}</td>
       <td><span class="metodo-badge ${metodoClass}">${m.metodo}</span></td>
       <td class="${montoClass}">${signo}${formatMonto(m.monto)}</td>
       <td>
-        <button class="btn-action btn-edit" onclick="editMovimiento('${m._id}')">✏️ Editar</button>
-        <button class="btn-action btn-delete" onclick="deleteMovimiento('${m._id}')">🗑️</button>
+        ${userInfo && userInfo.rol === 'Administrador' ? `<button class="btn-action btn-edit" onclick="editMovimiento('${m._id}')"><i class="ph-bold ph-pencil-simple"></i> Editar</button>
+        <button class="btn-action btn-delete" onclick="deleteMovimiento('${m._id}')"><i class="ph-bold ph-trash"></i> Eliminar</button>` : ''}
       </td>
     </tr>
   `;
@@ -346,7 +421,7 @@ function renderCategoriasGrid() {
           ${budgetText}
         </div>
       </div>
-      <button class="btn-action btn-delete" onclick="deleteCategoria('${c._id}')">🗑️</button>
+      ${userInfo.rol === 'Administrador' ? `<button class="btn-action btn-delete" onclick="deleteCategoria('${c._id}')"><i class="ph-bold ph-trash"></i> Eliminar</button>` : ''}
     </div>
   `}).join('');
 }
@@ -359,18 +434,31 @@ function openModal(tipoDefault) {
   document.getElementById('modal-movimiento').style.display = 'flex';
   document.getElementById('form-movimiento').reset();
   document.getElementById('mov-id').value = '';
-  document.getElementById('modal-titulo').textContent = 'Nuevo Movimiento';
 
-  // Si se abre desde "Ingresos" o "Gastos", pre-seleccionar el tipo
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+
+  document.getElementById('mov-fecha').value = `${year}-${month}-${day}`;
+  const horaEl = document.getElementById('mov-hora');
+  if (horaEl) horaEl.value = `${hours}:${minutes}`;
+
+  populateCategoriaSelect();
+
+  const groupTipo = document.getElementById('group-mov-tipo');
+  
   if (tipoDefault) {
     document.getElementById('mov-tipo').value = tipoDefault;
+    document.getElementById('modal-titulo').textContent = 'Nuevo ' + tipoDefault;
+    if (groupTipo) groupTipo.style.display = 'none'; // Ocultar el selector de tipo
+  } else {
+    document.getElementById('mov-tipo').disabled = false;
+    document.getElementById('modal-titulo').textContent = 'Nuevo Movimiento';
+    if (groupTipo) groupTipo.style.display = 'block'; // Mostrar el selector
   }
-
-  // Poner fecha de hoy por defecto
-  document.getElementById('mov-fecha').value = new Date().toISOString().split('T')[0];
-
-  // Llenar el selector de categorías
-  populateCategoriaSelect();
 }
 
 function closeModal() {
@@ -391,19 +479,39 @@ function populateCategoriaSelect() {
 async function handleMovimiento(e) {
   e.preventDefault();
   const id = document.getElementById('mov-id').value;
-  const body = {
-    tipo: document.getElementById('mov-tipo').value,
-    concepto: document.getElementById('mov-concepto').value.trim(),
-    monto: Number(document.getElementById('mov-monto').value),
-    categoriaId: document.getElementById('mov-categoria').value,
-    metodo: document.getElementById('mov-metodo').value,
-    fecha: document.getElementById('mov-fecha').value
-  };
+  const fechaVal = document.getElementById('mov-fecha').value;
+  const horaVal = document.getElementById('mov-hora')?.value || '12:00';
+  const fechaCompleta = new Date(`${fechaVal}T${horaVal}:00`);
 
-  if (!body.categoriaId) {
-    alert('Debes crear al menos una categoría antes de registrar un movimiento.');
+  const concepto = document.getElementById('mov-concepto').value.trim();
+  const monto = Number(document.getElementById('mov-monto').value);
+  const categoriaId = document.getElementById('mov-categoria').value;
+  const metodo = document.getElementById('mov-metodo').value;
+  const tipo = document.getElementById('mov-tipo').value;
+
+  if (!concepto || concepto.length < 2) {
+    alert('El concepto debe contener al menos 2 caracteres.');
     return;
   }
+
+  if (isNaN(monto) || monto <= 0) {
+    alert('El monto debe ser un número válido mayor a 0.');
+    return;
+  }
+
+  if (!categoriaId) {
+    alert('Debes crear o seleccionar al menos una categoría antes de registrar un movimiento.');
+    return;
+  }
+
+  const body = {
+    tipo,
+    concepto,
+    monto,
+    categoriaId,
+    metodo,
+    fecha: isNaN(fechaCompleta.getTime()) ? new Date().toISOString() : fechaCompleta.toISOString()
+  };
 
   try {
     let res;
@@ -423,10 +531,14 @@ async function handleMovimiento(e) {
 
     if (res && res.ok) {
       closeModal();
-      loadDashboard();
+      inicializarFiltroMes(); loadDashboard();
+    } else if (res) {
+      const data = await res.json();
+      alert(data.mensaje || 'Error al guardar el movimiento.');
     }
   } catch (err) {
     console.error('Error al guardar movimiento:', err);
+    alert('Error de conexión al guardar el movimiento.');
   }
 }
 
@@ -441,7 +553,18 @@ function editMovimiento(id) {
   document.getElementById('mov-concepto').value = m.concepto;
   document.getElementById('mov-monto').value = m.monto;
   document.getElementById('mov-metodo').value = m.metodo;
-  document.getElementById('mov-fecha').value = m.fecha ? m.fecha.split('T')[0] : '';
+
+  if (m.fecha) {
+    const d = new Date(m.fecha);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    document.getElementById('mov-fecha').value = `${year}-${month}-${day}`;
+    const horaEl = document.getElementById('mov-hora');
+    if (horaEl) horaEl.value = `${hours}:${minutes}`;
+  }
 
   // Seleccionar la categoría correcta
   const catId = m.categoriaId ? (m.categoriaId._id || m.categoriaId) : '';
@@ -454,7 +577,7 @@ async function deleteMovimiento(id) {
   try {
     const res = await authFetch(`/api/movimientos/${id}`, { method: 'DELETE' });
     if (res && res.ok) {
-      loadDashboard();
+      inicializarFiltroMes(); loadDashboard();
     }
   } catch (err) {
     console.error('Error al eliminar movimiento:', err);
@@ -466,12 +589,15 @@ async function deleteMovimiento(id) {
 // ========================================
 
 function openModalCategoria() {
-  document.getElementById('modal-categoria').style.display = 'flex';
   document.getElementById('form-categoria').reset();
+  togglePresupuesto();
+  document.getElementById('modal-categoria').style.display = 'flex';
 }
 
 function closeModalCategoria() {
   document.getElementById('modal-categoria').style.display = 'none';
+  document.getElementById('form-categoria').reset();
+  togglePresupuesto();
 }
 
 function togglePresupuesto() {
@@ -487,11 +613,26 @@ function togglePresupuesto() {
 
 async function handleCategoria(e) {
   e.preventDefault();
+  const nombre = document.getElementById('cat-nombre').value.trim();
+  const tipo = document.getElementById('cat-tipo').value;
+  const presupuestoRaw = document.getElementById('cat-presupuesto').value;
+  const presupuestoMensual = Number(presupuestoRaw) || 0;
+
+  if (!nombre || nombre.length < 2) {
+    alert('El nombre de la categoría debe tener al menos 2 caracteres.');
+    return;
+  }
+
+  if (presupuestoMensual < 0) {
+    alert('El presupuesto mensual no puede ser un número negativo.');
+    return;
+  }
+
   const body = {
-      nombre: document.getElementById('cat-nombre').value.trim(),
-      tipo: document.getElementById('cat-tipo').value,
-      presupuestoMensual: Number(document.getElementById('cat-presupuesto').value) || 0
-    };
+    nombre,
+    tipo,
+    presupuestoMensual: tipo === 'Gasto' ? presupuestoMensual : 0
+  };
 
   try {
     const res = await authFetch('/api/categorias', {
@@ -501,9 +642,13 @@ async function handleCategoria(e) {
     if (res && res.ok) {
       closeModalCategoria();
       await loadCategorias();
+    } else if (res) {
+      const data = await res.json();
+      alert(data.mensaje || 'Error al crear la categoría.');
     }
   } catch (err) {
     console.error('Error al crear categoría:', err);
+    alert('Error de conexión al crear categoría.');
   }
 }
 
@@ -553,7 +698,7 @@ async function loadFamilia() {
       <td><span class="role-badge">${u.rol}</span></td>
       <td>${formatFecha(u.createdAt)}</td>
       <td>
-        ${!isSelf ? `<button class="btn-delete" onclick="eliminarMiembro('${u._id}')">🗑️</button>` : '<span style="color:#64748b; font-size:12px;">Tú</span>'}
+        ${!isSelf ? `<button class="btn-edit" onclick="resetPasswordMiembro('${u._id}', '${u.nombre}')"><i class="ph-bold ph-key"></i> Contraseña</button> <button class="btn-delete" onclick="eliminarMiembro('${u._id}')"><i class="ph-bold ph-trash"></i> Eliminar</button>` : '<span style="color:#64748b; font-size:12px;">Tú</span>'}
       </td>
     `;
     tbody.appendChild(tr);
@@ -571,9 +716,22 @@ function closeModalMiembro() {
 
 async function handleMiembro(e) {
   e.preventDefault();
-  const nombre = document.getElementById('m-nombre').value;
-  const email = document.getElementById('m-email').value;
+  const nombre = document.getElementById('m-nombre').value.trim();
+  const email = document.getElementById('m-email').value.trim();
   const password = document.getElementById('m-password').value;
+
+  if (nombre.length < 2) {
+    alert('El nombre del miembro debe tener al menos 2 caracteres.');
+    return;
+  }
+  if (!email.includes('@')) {
+    alert('Ingresa un correo electrónico válido.');
+    return;
+  }
+  if (password.length < 6) {
+    alert('La contraseña provisional debe tener al menos 6 caracteres.');
+    return;
+  }
 
   const res = await authFetch('/api/usuarios', {
     method: 'POST',
@@ -616,93 +774,210 @@ async function eliminarMiembro(id) {
 let chartGastos = null;
 let chartBalance = null;
 
-function renderGraficos() {
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
+Chart.register(ChartDataLabels);
 
-  // Filtrar movimientos del mes actual
+function renderGraficos() {
+  const currentMonth = globalMonth;
+  const currentYear = globalYear;
+
   const movMes = allMovimientos.filter(m => {
     const d = new Date(m.fecha);
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
   });
 
-  // 1. Gráfico de Balance (Ingreso vs Gasto)
   const totalIngreso = movMes.filter(m => m.tipo === 'Ingreso').reduce((acc, m) => acc + m.monto, 0);
   const totalGasto = movMes.filter(m => m.tipo === 'Gasto').reduce((acc, m) => acc + m.monto, 0);
 
   const ctxBalance = document.getElementById('chart-balance');
   if (ctxBalance) {
     if (chartBalance) chartBalance.destroy();
-    
-    // Configurar color de fuente global para Chart.js para que resalte en tema oscuro
-    Chart.defaults.color = '#cbd5e1'; 
-
     chartBalance = new Chart(ctxBalance, {
       type: 'bar',
       data: {
         labels: ['Ingresos', 'Gastos'],
         datasets: [{
-          label: 'Total Mensual ($)',
+          label: 'Monto',
           data: [totalIngreso, totalGasto],
-          backgroundColor: ['#10b981', '#ef4444'], // Verde y Rojo
-          borderRadius: 6
+          backgroundColor: [
+            'rgba(16, 185, 129, 0.8)', // Ingreso gradient start
+            'rgba(239, 68, 68, 0.8)'   // Gasto gradient start
+          ],
+          borderColor: ['#10b981', '#ef4444'],
+          borderWidth: 1,
+          borderRadius: 8,
+          barPercentage: 0.6
         }]
       },
       options: {
         responsive: true,
-        scales: { 
-          y: { 
-            beginAtZero: true,
-            grid: { color: '#334155' }
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            titleFont: { family: "'Poppins', sans-serif", size: 14 },
+            bodyFont: { family: "'Poppins', sans-serif", size: 13, weight: 'bold' },
+            padding: 12,
+            callbacks: {
+              label: (ctx) => ' ' + formatMonto(ctx.raw)
+            }
           },
-          x: {
-            grid: { display: false }
+          datalabels: {
+            display: true,
+            color: '#94a3b8',
+            font: { family: "'Poppins', sans-serif", weight: '600', size: 12 },
+            anchor: 'end',
+            align: 'top',
+            formatter: (val) => formatMonto(val)
           }
         },
-        plugins: { legend: { display: false } }
+        scales: {
+          y: { 
+            beginAtZero: true,
+            grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
+            ticks: { color: '#64748b', font: { family: "'Poppins', sans-serif" }, callback: (val) => formatMonto(val) }
+          },
+          x: {
+            grid: { display: false, drawBorder: false },
+            ticks: { color: '#94a3b8', font: { family: "'Poppins', sans-serif", weight: '600', size: 13 } }
+          }
+        }
       }
     });
   }
 
-  // 2. Gráfico de Dona (Distribución de Gastos)
-  const gastos = movMes.filter(m => m.tipo === 'Gasto');
-  const categoriasMap = {};
-
-  gastos.forEach(g => {
-    // categoriaId puede venir populado desde el backend
-    const catNombre = g.categoriaId ? (g.categoriaId.nombre || 'Sin Categoría') : 'Sin Categoría';
-    categoriasMap[catNombre] = (categoriasMap[catNombre] || 0) + g.monto;
+  const gastosPorCat = {};
+  movMes.filter(m => m.tipo === 'Gasto').forEach(g => {
+    gastosPorCat[g.categoriaId.nombre] = (gastosPorCat[g.categoriaId.nombre] || 0) + g.monto;
   });
 
-  const catLabels = Object.keys(categoriasMap);
-  const catData = Object.values(categoriasMap);
+  const PALETA_DONUT = [
+    '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4',
+    '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#3b82f6'
+  ];
+
+  const categoriasOrdenadas = Object.entries(gastosPorCat).sort((a, b) => b[1] - a[1]);
+  const labelsGastos = categoriasOrdenadas.map(c => c[0]);
+  const valoresGastos = categoriasOrdenadas.map(c => c[1]);
+  const coloresGastos = labelsGastos.map((_, i) => PALETA_DONUT[i % PALETA_DONUT.length]);
+  const totalGastosMes = valoresGastos.reduce((acc, v) => acc + v, 0);
 
   const ctxGastos = document.getElementById('chart-gastos');
-  if (ctxGastos) {
-    if (chartGastos) chartGastos.destroy();
-    
-    // Paleta de colores cálidos y fríos variados
-    const bgColors = [
-      '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#6366f1', '#f43f5e', '#84cc16'
-    ];
+  const centroEl = document.getElementById('donut-center');
+  const vacioEl = document.getElementById('donut-empty');
+  const leyendaEl = document.getElementById('legend-gastos');
 
-    chartGastos = new Chart(ctxGastos, {
-      type: 'doughnut',
-      data: {
-        labels: catLabels.length ? catLabels : ['Sin Gastos'],
-        datasets: [{
-          data: catData.length ? catData : [1],
-          backgroundColor: catData.length ? bgColors.slice(0, catData.length) : ['#334155'],
-          borderWidth: 0
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          legend: { position: 'right', labels: { padding: 20 } }
+  const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const pctDe = (v) => totalGastosMes > 0 ? Math.round((v / totalGastosMes) * 100) : 0;
+  const marcarLeyenda = (idx) => {
+    if (!leyendaEl) return;
+    leyendaEl.querySelectorAll('.donut-legend-item').forEach(el => {
+      el.classList.toggle('active', Number(el.dataset.index) === idx);
+    });
+  };
+
+  if (leyendaEl) leyendaEl.innerHTML = '';
+
+  if (!ctxGastos) return;
+
+  if (chartGastos) { chartGastos.destroy(); chartGastos = null; }
+
+  if (totalGastosMes <= 0) {
+    if (centroEl) { centroEl.innerHTML = ''; centroEl.style.display = 'none'; }
+    if (vacioEl) vacioEl.style.display = 'block';
+    return;
+  }
+
+  if (vacioEl) vacioEl.style.display = 'none';
+  if (centroEl) {
+    centroEl.style.display = 'block';
+    centroEl.innerHTML = '<span class="donut-center-label">Gastos del mes</span>' +
+      '<span class="donut-center-value">' + formatMonto(totalGastosMes) + '</span>';
+  }
+
+  chartGastos = new Chart(ctxGastos, {
+    type: 'doughnut',
+    data: {
+      labels: labelsGastos,
+      datasets: [{
+        data: valoresGastos,
+        backgroundColor: coloresGastos,
+        borderColor: '#1e293b',
+        borderWidth: 3,
+        borderRadius: 8,
+        borderAlign: 'inner',
+        hoverOffset: 10,
+        hoverBorderColor: '#0f172a'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '55%',
+      layout: { padding: 10 },
+      animation: { animateRotate: true, animateScale: false, duration: 900, easing: 'easeOutQuart' },
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          display: (ctx) => (ctx.dataset.data[ctx.dataIndex] / totalGastosMes) * 100 >= 5,
+          color: '#ffffff',
+          font: { family: "'Poppins', sans-serif", weight: '600', size: 12 },
+          textAlign: 'center',
+          formatter: (value) => pctDe(value) + '%',
+          textShadowColor: 'rgba(15, 23, 42, 0.6)',
+          textShadowBlur: 4
         },
-        cutout: '70%'
+        tooltip: {
+          backgroundColor: 'rgba(15, 23, 42, 0.95)',
+          borderColor: '#334155',
+          borderWidth: 1,
+          cornerRadius: 8,
+          padding: 10,
+          displayColors: false,
+          titleFont: { family: "'Poppins', sans-serif", weight: '600', size: 13 },
+          bodyFont: { family: "'Poppins', sans-serif", size: 12 },
+          callbacks: {
+            label: (context) => ' ' + formatMonto(context.raw) + ' (' + pctDe(context.raw) + '%)'
+          }
+        }
+      },
+      onHover: (event, activeElements) => {
+        marcarLeyenda(activeElements.length ? activeElements[0].index : -1);
       }
+    }
+  });
+
+  const resaltarPorcion = (i) => {
+    if (!chartGastos) return;
+    const arc = chartGastos.getDatasetMeta(0).data[i];
+    if (!arc) return;
+    const pos = { x: arc.x, y: arc.y };
+    chartGastos.setActiveElements([{ datasetIndex: 0, index: i }]);
+    chartGastos.tooltip.setActiveElements([{ datasetIndex: 0, index: i }], pos);
+    chartGastos.update('none');
+  };
+
+  const limpiarResaltado = () => {
+    if (!chartGastos) return;
+    chartGastos.setActiveElements([]);
+    chartGastos.tooltip.setActiveElements([], { x: 0, y: 0 });
+    chartGastos.update('none');
+  };
+
+  if (leyendaEl) {
+    leyendaEl.innerHTML = labelsGastos.map((cat, i) =>
+      '<div class="donut-legend-item" data-index="' + i + '">' +
+        '<span class="donut-legend-dot" style="background:' + coloresGastos[i] + '"></span>' +
+        '<span class="donut-legend-name">' + escapeHtml(cat) + '</span>' +
+        '<span class="donut-legend-pct">' + pctDe(valoresGastos[i]) + '%</span>' +
+        '<span class="donut-legend-value">' + formatMonto(valoresGastos[i]) + '</span>' +
+      '</div>'
+    ).join('');
+
+    leyendaEl.querySelectorAll('.donut-legend-item').forEach(el => {
+      const idx = Number(el.dataset.index);
+      el.addEventListener('mouseenter', () => { marcarLeyenda(idx); resaltarPorcion(idx); });
+      el.addEventListener('mouseleave', () => { marcarLeyenda(-1); limpiarResaltado(); });
     });
   }
 }
@@ -710,131 +985,122 @@ function renderGraficos() {
 // ========================================
 // ALERTAS DE PRESUPUESTO (HU08)
 // ========================================
-
-function renderAlertasPresupuesto() {
+async function renderAlertasPresupuesto() {
   const container = document.getElementById('presupuesto-alertas-container');
   if (!container) return;
-  container.innerHTML = ''; // Limpiar
+  container.innerHTML = '';
 
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-
-  // Filtrar movimientos de "Gasto" del mes actual
-  const gastosMes = allMovimientos.filter(m => {
+  const currentMonth = globalMonth;
+  const currentYear = globalYear;
+  const movMes = allMovimientos.filter(m => {
     const d = new Date(m.fecha);
-    return m.tipo === 'Gasto' && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
   });
 
-  let alertasHtml = '';
+  const gastos = movMes.filter(m => m.tipo === 'Gasto');
+  const gastosPorCat = {};
+  gastos.forEach(g => {
+    gastosPorCat[g.categoriaId.nombre] = (gastosPorCat[g.categoriaId.nombre] || 0) + g.monto;
+  });
 
-  allCategorias.forEach(cat => {
-    // Solo revisar categorías de Gasto que tengan un presupuesto > 0
-    if (cat.tipo === 'Gasto' && cat.presupuestoMensual > 0) {
-      // Sumar los gastos que pertenecen a esta categoría
-      const sumaGastos = gastosMes
-        .filter(g => (g.categoriaId._id || g.categoriaId) === cat._id)
-        .reduce((acc, curr) => acc + curr.monto, 0);
+  try {
+    const res = await authFetch('/api/categorias');
+    if (!res.ok) return;
+    const cats = await res.json();
+    
+    cats.forEach(c => {
+      if (c.presupuestoMensual > 0) {
+        const gastado = gastosPorCat[c.nombre] || 0;
+        const porcentaje = (gastado / c.presupuestoMensual) * 100;
 
-      const porcentaje = (sumaGastos / cat.presupuestoMensual) * 100;
-
-      // Generar alerta si supera el 80% (Criterio HU08)
-      if (porcentaje >= 80) {
-        // Color: Amarillo si está entre 80 y 99%, Rojo si superó el 100%
-        const isOverBudget = porcentaje >= 100;
-        const colorBg = isOverBudget ? '#fef2f2' : '#fefce8';
-        const colorBorder = isOverBudget ? '#ef4444' : '#eab308';
-        const colorText = isOverBudget ? '#991b1b' : '#854d0e';
-        
-        alertasHtml += `
-          <div style="background-color: ${colorBg}; border-left: 4px solid ${colorBorder}; padding: 1rem; border-radius: 4px;">
-            <p style="color: ${colorText}; margin: 0; font-weight: bold;">
-              ⚠️ Alerta de Presupuesto: ${cat.nombre}
-            </p>
-            <p style="color: ${colorText}; margin: 5px 0 0 0; font-size: 14px;">
-              Llevas gastado ${formatMonto(sumaGastos)} de un presupuesto de ${formatMonto(cat.presupuestoMensual)}. 
-              (${porcentaje.toFixed(1)}%)
-            </p>
-          </div>
-        `;
+        if (porcentaje >= 80) {
+            const div = document.createElement('div');
+            const isDanger = porcentaje >= 100;
+            div.style.padding = '14px 18px';
+            div.style.borderRadius = '10px';
+            div.style.backgroundColor = isDanger ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)';
+            div.style.border = `1px solid ${isDanger ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`;
+            div.style.borderLeft = `4px solid ${isDanger ? '#ef4444' : '#f59e0b'}`;
+            div.style.color = isDanger ? '#ef4444' : '#f59e0b';
+            div.style.fontWeight = '500';
+            div.style.fontSize = '14px';
+            div.style.display = 'flex';
+            div.style.alignItems = 'center';
+            div.style.gap = '10px';
+            div.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
+            
+            // Fix del "$" en el msj
+            let msj = isDanger 
+              ? `Excediste tu presupuesto para "<strong>${c.nombre}</strong>". Gastaste ${formatMonto(gastado)} de ${formatMonto(c.presupuestoMensual)}.`
+              : `Alerta: Estás al ${porcentaje.toFixed(1)}% de tu presupuesto para "<strong>${c.nombre}</strong>".`;
+              
+            const icon = isDanger ? '<i class="ph-fill ph-warning-circle" style="font-size:22px;"></i>' : '<i class="ph-fill ph-warning" style="font-size:22px;"></i>';
+            div.innerHTML = `${icon} <span>${msj}</span>`;
+            container.appendChild(div);
+          }
       }
-    }
-  });
-
-  if (alertasHtml) {
-    container.innerHTML = alertasHtml;
+    });
+  } catch (err) {
+    console.error('Error alertas presupuesto', err);
   }
 }
 
 // ========================================
-// EXPORTACIÓN A EXCEL (HU09)
+// EXPORTAR A EXCEL (HU09)
 // ========================================
-
 function exportarExcel() {
+  if (!userInfo || userInfo.rol !== 'Administrador') {
+    alert('Acceso restringido: Solo el Administrador puede exportar reportes a Excel.');
+    return;
+  }
+
   if (allMovimientos.length === 0) {
     alert('No hay movimientos para exportar.');
     return;
   }
 
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-
-  // Filtrar movimientos del mes actual
+  
+  const currentMonth = globalMonth;
+  const currentYear = globalYear;
   const movMes = allMovimientos.filter(m => {
     const d = new Date(m.fecha);
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
   });
 
   if (movMes.length === 0) {
-    alert('No hay movimientos este mes para exportar.');
+    alert('No hay movimientos en este mes para exportar.');
     return;
   }
 
-  // Crear la matriz de datos para Excel
-  const worksheetData = [
-    ["Fecha", "Tipo", "Categoría", "Método", "Concepto", "Monto"]
-  ];
+  const dataExcel = movMes.map(m => ({
+    Fecha: formatFecha(m.fecha),
+    Hora: formatHora(m.fecha),
+    Usuario: m.usuarioId ? (m.usuarioId.nombre || m.usuarioId.email || 'Usuario') : 'Usuario',
+    Categoría: m.categoriaId ? m.categoriaId.nombre : 'Sin Categoría',
+    Concepto: m.concepto,
+    Método: m.metodo || 'No especificado',
+    Tipo: m.tipo,
+    Monto: m.monto
+  }));
 
-  movMes.forEach(m => {
-    worksheetData.push([
-      formatFecha(m.fecha),
-      m.tipo,
-      m.categoriaId ? (m.categoriaId.nombre || 'Sin Categoría') : 'Sin Categoría',
-      m.metodo,
-      m.concepto || '',
-      m.monto
-    ]);
-  });
+  const worksheet = XLSX.utils.json_to_sheet(dataExcel);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Movimientos');
 
-  // Generar el archivo .xlsx usando SheetJS
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(worksheetData);
-  
-  // Ajustar el ancho de las columnas para que se vea ordenado
-  ws['!cols'] = [
-    { wch: 12 }, // Fecha
-    { wch: 10 }, // Tipo
-    { wch: 20 }, // Categoría
-    { wch: 15 }, // Método
-    { wch: 30 }, // Concepto
-    { wch: 12 }  // Monto
-  ];
-
-  XLSX.utils.book_append_sheet(wb, ws, "Reporte_Mensual");
-
-  const nombreMeses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-  XLSX.writeFile(wb, `Reporte_Financiero_${nombreMeses[currentMonth]}_${currentYear}.xlsx`);
+  const mesActual = document.getElementById('texto-mes-actual') ? document.getElementById('texto-mes-actual').textContent.replace(' ', '_') : 'Mes';
+  XLSX.writeFile(workbook, `Reporte_Financiero_${mesActual}.xlsx`);
 }
 
 // ========================================
 // CONTROL DE MEMBRESÍA (HU05)
 // ========================================
-
 async function checkMembresia() {
   try {
     const res = await authFetch('/api/grupos/me');
     if (!res) return;
     if (!res.ok) {
-      document.getElementById('badge-membresia').textContent = 'Error de Servidor (Reinicia Node)';
+      const b = document.getElementById('badge-membresia');
+      if (b) b.textContent = 'Error de Servidor (Reinicia Node)';
       return;
     }
     const grupo = await res.json();
@@ -843,35 +1109,266 @@ async function checkMembresia() {
     const badge = document.getElementById('badge-membresia');
     const botonesAccion = document.querySelectorAll('#app .btn-accent, #app .btn-primary, #app .btn-action');
     
-    // Calcular días restantes
     const hoy = new Date();
     const vencimiento = new Date(grupo.fechaVencimiento);
     const msDiff = vencimiento.getTime() - hoy.getTime();
     const diasRestantes = Math.ceil(msDiff / (1000 * 3600 * 24));
 
     if (grupo.estadoMembresia === 'Vencida' || diasRestantes <= 0) {
-      // Bloqueo Estricto (SaaS Read-Only)
       if (modal) modal.style.display = 'flex';
-      badge.style.background = 'rgba(239, 68, 68, 0.2)';
-      badge.style.color = '#ef4444';
-      badge.textContent = 'Membresía Vencida';
-      
-      // Ocultar botones de agregar, editar, eliminar
+      if (badge) {
+        badge.style.background = 'rgba(239, 68, 68, 0.2)';
+        badge.style.color = '#ef4444';
+        badge.textContent = 'Membresía Vencida';
+      }
       botonesAccion.forEach(btn => btn.style.display = 'none');
-      // Asegurar modo lectura en toda la app
       document.body.classList.add('readonly-mode');
     } else {
-      // Plan Activo
       if (modal) modal.style.display = 'none';
-      badge.style.background = 'rgba(16, 185, 129, 0.2)';
-      badge.style.color = '#10b981';
-      badge.textContent = `Plan Activo (${diasRestantes} días)`;
-      
-      // Mostrar botones de acción
-      botonesAccion.forEach(btn => btn.style.display = ''); // Restaurar
+      if (badge) {
+        badge.style.background = 'rgba(16, 185, 129, 0.2)';
+        badge.style.color = '#10b981';
+        badge.textContent = `Plan Activo (${diasRestantes} días)`;
+      }
+      botonesAccion.forEach(btn => btn.style.display = ''); 
       document.body.classList.remove('readonly-mode');
     }
   } catch (err) {
     console.error('Error verificando membresía', err);
+  }
+}
+
+
+// ========================================
+// CUSTOM MONTH PICKER
+// ========================================
+let pickerYear = new Date().getFullYear();
+
+function inicializarFiltroMes() {
+  const label = document.getElementById('texto-mes-actual');
+  if (label) {
+    const nombreCompletos = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    label.textContent = `${nombreCompletos[globalMonth]} ${globalYear}`;
+  }
+}
+
+function toggleMonthPicker() {
+  const dp = document.getElementById('picker-dropdown');
+  if (dp.style.display === 'none' || dp.style.display === '') {
+    pickerYear = globalYear;
+    renderPickerMonths();
+    dp.style.display = 'block';
+  } else {
+    dp.style.display = 'none';
+  }
+}
+
+function changePickerYear(delta) {
+  pickerYear += delta;
+  renderPickerMonths();
+}
+
+function selectPickerMonth(mIndex) {
+  globalMonth = mIndex;
+  globalYear = pickerYear;
+  inicializarFiltroMes();
+  document.getElementById('picker-dropdown').style.display = 'none';
+  
+  // Refrescar la vista actual (Dashboard o Tablas)
+  if (document.getElementById('section-dashboard').style.display === 'block') {
+    loadDashboard();
+  } else if (document.getElementById('section-ingresos').style.display === 'block') {
+    renderFilteredTable('Ingreso', 'tabla-ingresos');
+  } else if (document.getElementById('section-gastos').style.display === 'block') {
+    renderFilteredTable('Gasto', 'tabla-gastos');
+  }
+}
+
+function renderPickerMonths() {
+  document.getElementById('picker-year').textContent = pickerYear;
+  const grid = document.getElementById('picker-months-grid');
+  const nombreMeses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  
+  let html = '';
+  for(let i=0; i<12; i++) {
+    let isSelected = (i === globalMonth && pickerYear === globalYear);
+    let btnClass = isSelected ? 'picker-month-btn selected' : 'picker-month-btn';
+    html += `<button type="button" class="${btnClass}" onclick="selectPickerMonth(${i})">${nombreMeses[i]}</button>`;
+  }
+  grid.innerHTML = html;
+}
+
+// Cerrar picker al hacer clic afuera
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('contenedor-mes');
+  if (picker && !picker.contains(e.target)) {
+    const dp = document.getElementById('picker-dropdown');
+    if (dp) dp.style.display = 'none';
+  }
+});
+
+
+
+
+// --- SIMULADOR DE PAGO SAAS ---
+async function simularPago() {
+  const btn = document.getElementById('btn-simular-pago');
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<i class="ph-bold ph-spinner ph-spin"></i> Procesando Pago...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch('/api/grupos/simular-pago', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('sgf_token') || token}`
+      }
+    });
+
+    if (res.ok) {
+      setTimeout(() => {
+        alert('¡Pago procesado con éxito! Tu membresía SGF ha sido renovada por 30 días.');
+        window.location.reload(); // Recargar para limpiar bloqueos de UI
+      }, 1500); // Pequeña demora para que se vea la animación
+    } else {
+      btn.innerHTML = originalText;
+      btn.disabled = false;
+      alert('Hubo un error procesando el pago.');
+    }
+  } catch (error) {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+    console.error('Error simulando pago:', error);
+  }
+}
+
+
+
+// === GESTIÓN DE AVATAR FAMILIAR ===
+function renderUserAvatar(avatarKey) {
+  const avatarEl = document.getElementById('header-user-avatar');
+  if (!avatarEl) return;
+  
+  if (avatarKey && ['padre', 'madre', 'hijo'].includes(avatarKey)) {
+    avatarEl.innerHTML = `<img src="/avatars/${avatarKey}.jpg" alt="${avatarKey}">`;
+    avatarEl.style.padding = '0';
+    avatarEl.style.overflow = 'hidden';
+  } else {
+    avatarEl.innerHTML = `<i class="ph-fill ph-user"></i>`;
+    avatarEl.style.padding = '';
+    avatarEl.style.overflow = '';
+  }
+}
+
+function seleccionarAvatar(key) {
+  const hiddenInput = document.getElementById('perfil-avatar');
+  if (hiddenInput) hiddenInput.value = key;
+  document.querySelectorAll('.avatar-card-option').forEach(el => {
+    el.classList.remove('active');
+  });
+  const opt = document.getElementById(`avatar-opt-${key}`);
+  if (opt) opt.classList.add('active');
+}
+
+// === GESTIÓN DE PERFIL ===
+async function abrirPerfil() {
+  try {
+    const res = await fetch('/api/usuarios/me', {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('sgf_token') || token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      document.getElementById('perfil-nombre').value = data.usuario.nombre || '';
+      document.getElementById('perfil-email').value = data.usuario.email || '';
+      document.getElementById('perfil-current-password').value = '';
+      document.getElementById('perfil-new-password').value = '';
+      const currentAvatar = data.usuario.avatar || 'padre';
+      seleccionarAvatar(currentAvatar);
+      document.getElementById('modal-perfil').style.display = 'flex';
+    } else {
+      const text = await res.text();
+      alert('Error del servidor: ' + res.status + ' - ' + text);
+    }
+  } catch (error) {
+    alert('Error JS al abrir perfil: ' + error.message);
+  }
+}
+
+async function guardarPerfil(e) {
+  e.preventDefault();
+  const nombre = document.getElementById('perfil-nombre').value;
+  const currentPassword = document.getElementById('perfil-current-password').value;
+  const newPassword = document.getElementById('perfil-new-password').value;
+  const avatar = document.getElementById('perfil-avatar')?.value || 'padre';
+
+  if (newPassword) {
+    if (newPassword.length < 6) {
+      alert('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    if (!currentPassword) {
+      alert('Debes ingresar tu contraseña actual para poder cambiarla.');
+      return;
+    }
+  }
+
+  const payload = { nombre: nombre.trim(), avatar };
+  if (newPassword) {
+    payload.password = newPassword;
+    payload.currentPassword = currentPassword;
+  }
+
+  try {
+    const res = await fetch('/api/usuarios/me', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('sgf_token') || token}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert('Perfil actualizado correctamente.');
+      document.getElementById('user-name').textContent = data.nombre;
+      renderUserAvatar(data.avatar);
+      if (userInfo) userInfo.avatar = data.avatar;
+      document.getElementById('modal-perfil').style.display = 'none';
+    } else {
+      alert(data.mensaje || 'Error al actualizar perfil');
+    }
+  } catch (error) {
+    console.error('Error guardando perfil:', error);
+    alert('Ocurrió un error inesperado al guardar el perfil.');
+  }
+}
+
+// === RESTABLECER CONTRASEÑA DE MIEMBRO (UC11 - SysAdmin) ===
+async function resetPasswordMiembro(userId, nombre) {
+  const newPassword = prompt(`Ingresa la nueva contraseña para ${nombre} (mínimo 6 caracteres):`);
+  if (!newPassword) return;
+
+  if (newPassword.length < 6) {
+    alert('La contraseña debe tener al menos 6 caracteres.');
+    return;
+  }
+
+  try {
+    const res = await authFetch(`/api/usuarios/${userId}/reset-password`, {
+      method: 'PUT',
+      body: JSON.stringify({ newPassword })
+    });
+
+    if (!res) return;
+
+    const data = await res.json();
+    if (res.ok) {
+      alert(data.mensaje);
+    } else {
+      alert(data.mensaje || 'Error al restablecer contraseña.');
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Error de conexión al restablecer contraseña.');
   }
 }

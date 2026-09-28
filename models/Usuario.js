@@ -26,6 +26,11 @@ const usuarioSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Grupo',
     required: true
+  },
+  avatar: {
+    type: String,
+    enum: ['padre', 'madre', 'hijo', 'default'],
+    default: 'default'
   }
 }, { timestamps: true });
 
