@@ -37,6 +37,9 @@
         <div class="input-group">
           <label for="login-password">Contraseña</label>
           <input type="password" id="login-password" placeholder="••••••••" required>
+          <div style="text-align: right; margin-top: 2px;">
+            <button type="button" onclick="abrirModalRecuperar()" style="background: none; border: none; color: #3b82f6; font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0;">¿Olvidaste tu contraseña?</button>
+          </div>
         </div>
         <button type="submit" class="btn-primary">Ingresar</button>
         <p id="login-error" class="auth-error"></p>
@@ -54,7 +57,8 @@
         </div>
         <div class="input-group">
           <label for="reg-password">Contraseña</label>
-          <input type="password" id="reg-password" placeholder="Mínimo 4 caracteres" required minlength="4">
+          <input type="password" id="reg-password" placeholder="Mínimo 8 caracteres" required minlength="8">
+          <small style="color:#94a3b8; display:block; margin-top:4px; font-size:12px;">Mínimo 8 caracteres, números y al menos 1 mayúscula.</small>
         </div>
         <div class="input-group">
           <label for="reg-grupo">Nombre del grupo familiar</label>
@@ -81,14 +85,14 @@
         <button class="nav-item active" data-section="dashboard" onclick="navigateTo('dashboard')">
           <i class="ph ph-squares-four nav-icon"></i> Dashboard
         </button>
+        <button class="nav-item" data-section="categorias" onclick="navigateTo('categorias')">
+          <i class="ph ph-tag nav-icon"></i> Categorías
+        </button>
         <button class="nav-item" data-section="ingresos" onclick="navigateTo('ingresos')">
           <i class="ph ph-trend-up nav-icon"></i> Ingresos
         </button>
         <button class="nav-item" data-section="gastos" onclick="navigateTo('gastos')">
           <i class="ph ph-trend-down nav-icon"></i> Gastos
-        </button>
-        <button class="nav-item" data-section="categorias" onclick="navigateTo('categorias')">
-          <i class="ph ph-tag nav-icon"></i> Categorías
         </button>
         <button class="nav-item" id="btn-nav-familia" data-section="familia" onclick="navigateTo('familia')" style="display:none">
           <i class="ph ph-users nav-icon"></i> Mi Familia
@@ -207,7 +211,12 @@
           <div class="panel" style="display: flex; flex-direction: column;">
             <div class="panel-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 1rem;">
               <h3 style="font-size: 16px;"><i class="ph-fill ph-list-bullets" style="color:var(--accent-color);"></i> Últimos Movimientos</h3>
-              <div style="display: flex; gap: 10px;">
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <select id="filtro-tipo-dashboard" class="filtro-select-dark" onchange="cambiarFiltroTipo(this.value)">
+                  <option value="todos">Todos los Tipos</option>
+                  <option value="Ingreso">Solo Ingresos</option>
+                  <option value="Gasto">Solo Gastos</option>
+                </select>
                 <button id="btn-exportar-excel" class="btn-secondary" onclick="exportarExcel()" style="display:none; background-color: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; align-items:center; gap: 5px; font-size:13px;"><i class="ph-bold ph-file-csv"></i> Exportar a Excel</button>
                 <button class="btn-accent" onclick="openModal()" style="font-size:13px;">+ Nuevo</button>
               </div>
@@ -220,6 +229,7 @@
               <table class="data-table">
                 <thead>
                   <tr>
+                    <th style="text-align: center; width: 50px;">Tipo</th>
                     <th>Fecha</th>
                     <th>Hora</th>
                     <th>Usuario</th>
@@ -227,7 +237,7 @@
                     <th>Concepto</th>
                     <th>Método</th>
                     <th>Monto</th>
-                    <th>Acciones</th>
+                    <th style="text-align: center; width: 80px;">Acciones</th>
                   </tr>
                 </thead>
                 <tbody id="tabla-movimientos">
@@ -266,7 +276,7 @@
                   <th>Concepto</th>
                   <th>Método</th>
                   <th>Monto</th>
-                  <th>Acciones</th>
+                  <th style="text-align: center; width: 80px;">Acciones</th>
                 </tr>
               </thead>
               <tbody id="tabla-ingresos"></tbody>
@@ -282,6 +292,8 @@
             <h3>Todos los Gastos</h3>
             <button class="btn-accent" onclick="openModal('Gasto')">+ Nuevo Gasto</button>
           </div>
+          <!-- Alertas de Presupuesto en Gastos (HU08) -->
+          <div id="presupuesto-alertas-container-gastos" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 1rem;"></div>
           <div class="table-container">
             <table class="data-table">
               <thead>
@@ -293,7 +305,7 @@
                   <th>Concepto</th>
                   <th>Método</th>
                   <th>Monto</th>
-                  <th>Acciones</th>
+                  <th style="text-align: center; width: 80px;">Acciones</th>
                 </tr>
               </thead>
               <tbody id="tabla-gastos"></tbody>
@@ -329,6 +341,7 @@
                   <th>Nombre</th>
                   <th>Correo Electrónico</th>
                   <th>Rol</th>
+                  <th>Estado</th>
                   <th>Fecha Registro</th>
                   <th>Acciones</th>
                 </tr>
@@ -372,8 +385,8 @@
       <form id="form-movimiento" onsubmit="handleMovimiento(event)">
         <input type="hidden" id="mov-id">
         <div class="input-group" id="group-mov-tipo">
-            <label for="mov-tipo">Tipo</label>
-          <select id="mov-tipo" required>
+          <label for="mov-tipo">Tipo</label>
+          <select id="mov-tipo" required onchange="populateCategoriaSelect(this.value)">
             <option value="Ingreso">Ingreso</option>
             <option value="Gasto">Gasto</option>
           </select>
@@ -462,8 +475,8 @@
         </div>
         <div class="input-group">
           <label for="m-password">Contraseña Temporal</label>
-          <input type="password" id="m-password" placeholder="Mínimo 4 caracteres" required minlength="4">
-          <small style="color:#94a3b8; display:block; margin-top:5px; font-size:12px;">Esta clave la usará para ingresar por primera vez.</small>
+          <input type="password" id="m-password" placeholder="Mínimo 8 caracteres" required minlength="8">
+          <small style="color:#94a3b8; display:block; margin-top:5px; font-size:12px;">Mínimo 8 caracteres, números y al menos 1 mayúscula.</small>
         </div>
         <button type="submit" class="btn-primary">Registrar Miembro</button>
       </form>
@@ -514,7 +527,7 @@
           </div>
           <div class="input-group">
             <label>Nueva Contraseña</label>
-            <input type="password" id="perfil-new-password" placeholder="Dejar en blanco si no deseas cambiarla">
+            <input type="password" id="perfil-new-password" placeholder="Mínimo 8 caracteres, números y 1 mayúscula">
           </div>
           <div class="modal-footer">
             <button type="button" class="btn-secondary" onclick="document.getElementById('modal-perfil').style.display='none'">Cancelar</button>
@@ -523,6 +536,35 @@
         </form>
       </div>
     </div>
+
+  <!-- Modal Recuperar Contraseña / Cuenta Bloqueada -->
+  <div id="modal-recuperar-password" class="modal-overlay" style="display:none">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <h2><i class="ph-bold ph-key"></i> Recuperación de Cuenta</h2>
+        <button type="button" class="close-btn" onclick="cerrarModalRecuperar()">&times;</button>
+      </div>
+      <div style="padding: 10px 0; text-align: center;">
+        <div style="width: 58px; height: 58px; border-radius: 50%; background: rgba(59, 130, 246, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto; color: #3b82f6; font-size: 28px;">
+          <i class="ph-bold ph-phone-call"></i>
+        </div>
+        <h3 style="margin-bottom: 8px; font-size: 17px; color: var(--text-color);">¿Olvidaste tu contraseña o tu cuenta está bloqueada?</h3>
+        <p style="color: #94a3b8; font-size: 14px; line-height: 1.5; margin-bottom: 16px;">
+          Para restablecer su contraseña o desbloquear su acceso, por favor contactarse al:
+        </p>
+        <div style="background: rgba(59, 130, 246, 0.1); border: 1px dashed #3b82f6; border-radius: 10px; padding: 14px; margin-bottom: 16px;">
+          <a href="tel:+56912345678" style="font-size: 21px; font-weight: 700; color: #38bdf8; letter-spacing: 0.5px; text-decoration: none; display: block;">+569 1234 5678</a>
+          <small style="display: block; color: #94a3b8; font-size: 12px; margin-top: 4px;">Soporte Técnico SGF — Atención Telefónica / WhatsApp</small>
+        </div>
+        <p style="color: #64748b; font-size: 12.5px; line-height: 1.4; margin-bottom: 20px;">
+          💡 <em>Si eres miembro de una familia, también puedes solicitarle directamente al <strong>Administrador</strong> de tu grupo que restablezca tu contraseña o desbloquee tu cuenta desde su panel de gestión.</em>
+        </p>
+        <button type="button" class="btn-primary" onclick="cerrarModalRecuperar()" style="width: 100%;">
+          Entendido
+        </button>
+      </div>
+    </div>
+  </div>
 
 </body>
 </html>

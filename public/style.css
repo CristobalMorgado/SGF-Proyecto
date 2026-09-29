@@ -395,6 +395,7 @@ body {
   grid-template-columns: 1fr 2fr;
   gap: 1.5rem;
   margin-bottom: 2rem;
+  align-items: start;
 }
 
 /* === GRÁFICO DE DONA === */
@@ -1191,5 +1192,100 @@ body[data-rol="Administrador"] #btn-nav-familia {
   object-fit: cover;
   border-radius: 50%;
 }
+
+/* === BADGES DE TIPO DE MOVIMIENTO (SOLO ÍCONO) === */
+.badge-tipo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.badge-tipo.ingreso {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badge-tipo.gasto {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.badge-tipo i {
+  font-size: 15px;
+}
+
+/* === SELECTOR DE FILTRO EN DASHBOARD (DARK THEME) === */
+.filtro-select-dark {
+  background-color: #1e293b;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 0.45rem 0.85rem;
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.filtro-select-dark:hover {
+  border-color: #475569;
+}
+
+.filtro-select-dark:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+
+.filtro-select-dark option {
+  background-color: #1e293b;
+  color: #f8fafc;
+  padding: 8px 12px;
+}
+
+/* === BOTONES DE ACCIÓN SOLO ÍCONO EN TABLAS === */
+.data-table .btn-action {
+  width: 30px;
+  height: 30px;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 6px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  font-size: 14px !important;
+  margin: 0 2px !important;
+  vertical-align: middle;
+}
+
+.data-table .btn-action.btn-edit {
+  background: rgba(59, 130, 246, 0.15) !important;
+  color: #3b82f6 !important;
+}
+
+.data-table .btn-action.btn-edit:hover {
+  background: rgba(59, 130, 246, 0.3) !important;
+  transform: translateY(-1px);
+}
+
+.data-table .btn-action.btn-delete {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #ef4444 !important;
+}
+
+.data-table .btn-action.btn-delete:hover {
+  background: rgba(239, 68, 68, 0.3) !important;
+  transform: translateY(-1px);
+}
+
 
 

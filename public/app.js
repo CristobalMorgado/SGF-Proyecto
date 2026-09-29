@@ -88,7 +88,7 @@ async function handleLogin(e) {
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
   const errorEl = document.getElementById('login-error');
-  errorEl.textContent = '';
+  errorEl.innerHTML = '';
 
   try {
     const res = await fetch(`${API}/api/auth/login`, {
@@ -99,7 +99,28 @@ async function handleLogin(e) {
     const data = await res.json();
 
     if (!res.ok) {
-      errorEl.textContent = data.mensaje || 'Error al iniciar sesión.';
+      if (data.bloqueado) {
+        errorEl.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; border-radius: 8px; padding: 12px; margin-top: 12px; color: #fca5a5; font-size: 13px; text-align: center; line-height: 1.4;">
+            <i class="ph-bold ph-lock-key" style="font-size: 22px; display: block; margin-bottom: 6px; color: #f87171;"></i>
+            <strong>${data.mensaje}</strong>
+            <div style="margin-top: 8px;">
+              <button type="button" onclick="abrirModalRecuperar()" style="background: #ef4444; border: none; color: white; border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer;">
+                Ver información de contacto
+              </button>
+            </div>
+          </div>
+        `;
+      } else if (data.intentosRestantes !== undefined) {
+        errorEl.innerHTML = `
+          <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; border-radius: 8px; padding: 10px; margin-top: 10px; color: #fcd34d; font-size: 13px; text-align: center;">
+            <i class="ph-bold ph-warning-circle" style="font-size: 16px; vertical-align: middle; margin-right: 4px;"></i>
+            <span>${data.mensaje}</span>
+          </div>
+        `;
+      } else {
+        errorEl.textContent = data.mensaje || 'Error al iniciar sesión.';
+      }
       return;
     }
 
@@ -110,6 +131,16 @@ async function handleLogin(e) {
   } catch (err) {
     errorEl.textContent = 'Error de conexión con el servidor.';
   }
+}
+
+function abrirModalRecuperar() {
+  const modal = document.getElementById('modal-recuperar-password');
+  if (modal) modal.style.display = 'flex';
+}
+
+function cerrarModalRecuperar() {
+  const modal = document.getElementById('modal-recuperar-password');
+  if (modal) modal.style.display = 'none';
 }
 
 async function handleRegistro(e) {
@@ -131,8 +162,16 @@ async function handleRegistro(e) {
     errorEl.textContent = 'Ingresa un correo electrónico válido.';
     return;
   }
-  if (password.length < 6) {
-    errorEl.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+  if (password.length < 8) {
+    errorEl.textContent = 'La contraseña debe tener al menos 8 caracteres.';
+    return;
+  }
+  if (!/[A-Z]/.test(password)) {
+    errorEl.textContent = 'La contraseña debe incluir al menos una letra mayúscula.';
+    return;
+  }
+  if (!/\d/.test(password)) {
+    errorEl.textContent = 'La contraseña debe incluir al menos un número.';
     return;
   }
 
@@ -257,9 +296,15 @@ function navigateTo(section) {
   document.getElementById('section-title').textContent = sectionTitles[section] || section;
 
   // Cargar datos según la sección
-  if (section === 'dashboard') inicializarFiltroMes(); loadDashboard();
+  if (section === 'dashboard') {
+    inicializarFiltroMes();
+    loadDashboard();
+  }
   if (section === 'ingresos') renderFilteredTable('Ingreso', 'tabla-ingresos');
-  if (section === 'gastos') renderFilteredTable('Gasto', 'tabla-gastos');
+  if (section === 'gastos') {
+    renderFilteredTable('Gasto', 'tabla-gastos');
+    renderAlertasPresupuesto();
+  }
   if (section === 'categorias') loadCategorias();
   if (section === 'familia') loadFamilia();
 }
@@ -328,6 +373,13 @@ async function loadCategorias() {
 // RENDERIZAR TABLAS
 // ========================================
 
+let filtroTipoDashboard = 'todos';
+
+function cambiarFiltroTipo(tipo) {
+  filtroTipoDashboard = tipo;
+  renderMovimientosTable();
+}
+
 function renderMovimientosTable() {
   const tbody = document.getElementById('tabla-movimientos');
   const emptyMsg = document.getElementById('sin-movimientos');
@@ -335,20 +387,27 @@ function renderMovimientosTable() {
   const currentMonth = globalMonth;
   const currentYear = globalYear;
   
-  const movMes = allMovimientos.filter(m => {
+  let movMes = allMovimientos.filter(m => {
     const d = new Date(m.fecha);
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
   });
 
+  if (filtroTipoDashboard !== 'todos') {
+    movMes = movMes.filter(m => m.tipo === filtroTipoDashboard);
+  }
+
   if (movMes.length === 0) {
     tbody.innerHTML = '';
     emptyMsg.style.display = 'block';
+    emptyMsg.textContent = filtroTipoDashboard === 'todos' 
+      ? 'No hay movimientos registrados aún.' 
+      : `No hay ${filtroTipoDashboard.toLowerCase()}s registrados en este período.`;
     return;
   }
 
   emptyMsg.style.display = 'none';
-  // En el dashboard, limitamos a los últimos 10 del mes (o todos los del mes)
-  tbody.innerHTML = movMes.slice(0, 15).map(m => buildMovRow(m)).join('');
+  // En el dashboard, limitamos a los últimos 15 según el filtro activo
+  tbody.innerHTML = movMes.slice(0, 15).map(m => buildMovRow(m, true)).join('');
 }
 
 function renderFilteredTable(tipo, tbodyId) {
@@ -363,10 +422,10 @@ function renderFilteredTable(tipo, tbodyId) {
     tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#64748b; padding:24px;">No hay ${tipo.toLowerCase()}s registrados.</td></tr>`;
     return;
   }
-  tbody.innerHTML = filtered.map(m => buildMovRow(m)).join('');
+  tbody.innerHTML = filtered.map(m => buildMovRow(m, false)).join('');
 }
 
-function buildMovRow(m) {
+function buildMovRow(m, showTipo = false) {
   const catNombre = m.categoriaId ? m.categoriaId.nombre : 'Sin categoría';
   const usuarioNombre = m.usuarioId ? (m.usuarioId.nombre || m.usuarioId.email || 'Usuario') : 'Usuario';
   const userAvatar = m.usuarioId && ['padre', 'madre', 'hijo'].includes(m.usuarioId.avatar)
@@ -378,8 +437,15 @@ function buildMovRow(m) {
   if (m.metodo === 'Efectivo') metodoClass = 'metodo-efectivo';
   else if (m.metodo === 'Tarjeta') metodoClass = 'metodo-tarjeta';
 
+  const tipoTd = showTipo
+    ? (m.tipo === 'Ingreso'
+        ? `<td style="text-align: center;"><span class="badge-tipo ingreso" title="Ingreso"><i class="ph-bold ph-trend-up"></i></span></td>`
+        : `<td style="text-align: center;"><span class="badge-tipo gasto" title="Gasto"><i class="ph-bold ph-trend-down"></i></span></td>`)
+    : '';
+
   return `
     <tr>
+      ${tipoTd}
       <td>${formatFecha(m.fecha)}</td>
       <td><span style="color:#94a3b8; font-size:12px; font-weight:600;"><i class="ph ph-clock" style="margin-right:3px; vertical-align:-1px;"></i>${formatHora(m.fecha)}</span></td>
       <td><span style="font-weight:600; color:var(--text-color); font-size:13px;">${userAvatar}${usuarioNombre}</span></td>
@@ -387,9 +453,9 @@ function buildMovRow(m) {
       <td>${m.concepto}</td>
       <td><span class="metodo-badge ${metodoClass}">${m.metodo}</span></td>
       <td class="${montoClass}">${signo}${formatMonto(m.monto)}</td>
-      <td>
-        ${userInfo && userInfo.rol === 'Administrador' ? `<button class="btn-action btn-edit" onclick="editMovimiento('${m._id}')"><i class="ph-bold ph-pencil-simple"></i> Editar</button>
-        <button class="btn-action btn-delete" onclick="deleteMovimiento('${m._id}')"><i class="ph-bold ph-trash"></i> Eliminar</button>` : ''}
+      <td style="text-align: center; white-space: nowrap;">
+        ${userInfo && userInfo.rol === 'Administrador' ? `<button class="btn-action btn-edit" title="Editar" onclick="editMovimiento('${m._id}')"><i class="ph-bold ph-pencil-simple"></i></button>
+        <button class="btn-action btn-delete" title="Eliminar" onclick="deleteMovimiento('${m._id}')"><i class="ph-bold ph-trash"></i></button>` : ''}
       </td>
     </tr>
   `;
@@ -446,18 +512,19 @@ function openModal(tipoDefault) {
   const horaEl = document.getElementById('mov-hora');
   if (horaEl) horaEl.value = `${hours}:${minutes}`;
 
-  populateCategoriaSelect();
-
   const groupTipo = document.getElementById('group-mov-tipo');
   
   if (tipoDefault) {
     document.getElementById('mov-tipo').value = tipoDefault;
     document.getElementById('modal-titulo').textContent = 'Nuevo ' + tipoDefault;
     if (groupTipo) groupTipo.style.display = 'none'; // Ocultar el selector de tipo
+    populateCategoriaSelect(tipoDefault);
   } else {
     document.getElementById('mov-tipo').disabled = false;
     document.getElementById('modal-titulo').textContent = 'Nuevo Movimiento';
     if (groupTipo) groupTipo.style.display = 'block'; // Mostrar el selector
+    const tipoActual = document.getElementById('mov-tipo').value || 'Ingreso';
+    populateCategoriaSelect(tipoActual);
   }
 }
 
@@ -465,14 +532,23 @@ function closeModal() {
   document.getElementById('modal-movimiento').style.display = 'none';
 }
 
-function populateCategoriaSelect() {
+function populateCategoriaSelect(tipoFiltro, selectedCatId = '') {
   const select = document.getElementById('mov-categoria');
-  select.innerHTML = allCategorias.map(c =>
-    `<option value="${c._id}">${c.nombre} (${c.tipo})</option>`
-  ).join('');
+  if (!select) return;
 
-  if (allCategorias.length === 0) {
-    select.innerHTML = '<option value="">— Crea una categoría primero —</option>';
+  const tipo = tipoFiltro || document.getElementById('mov-tipo')?.value || 'Ingreso';
+  const categoriasFiltradas = allCategorias.filter(c => c.tipo === tipo);
+
+  if (categoriasFiltradas.length === 0) {
+    select.innerHTML = `<option value="">— No hay categorías de ${tipo} creadas —</option>`;
+  } else {
+    select.innerHTML = categoriasFiltradas.map(c =>
+      `<option value="${c._id}">${c.nombre}</option>`
+    ).join('');
+  }
+
+  if (selectedCatId) {
+    select.value = selectedCatId;
   }
 }
 
@@ -530,8 +606,27 @@ async function handleMovimiento(e) {
     }
 
     if (res && res.ok) {
+      const data = await res.json();
       closeModal();
-      inicializarFiltroMes(); loadDashboard();
+      inicializarFiltroMes();
+      await loadDashboard();
+
+      if (document.getElementById('section-gastos')?.style.display !== 'none') {
+        renderFilteredTable('Gasto', 'tabla-gastos');
+        renderAlertasPresupuesto();
+      }
+      if (document.getElementById('section-ingresos')?.style.display !== 'none') {
+        renderFilteredTable('Ingreso', 'tabla-ingresos');
+      }
+
+      if (data && data.alertaPresupuesto) {
+        const ap = data.alertaPresupuesto;
+        if (ap.excedido) {
+          alert(`🚨 ¡Alerta de Presupuesto Excedido!\nHas superado el 100% del presupuesto para "${ap.categoria}".\nGastaste ${formatMonto(ap.gastado)} de un tope de ${formatMonto(ap.presupuesto)} (${ap.porcentaje}%).`);
+        } else {
+          alert(`⚠️ Alerta de Presupuesto:\nHas alcanzado el ${ap.porcentaje}% del tope asignado para "${ap.categoria}".\nLlevas gastado ${formatMonto(ap.gastado)} de ${formatMonto(ap.presupuesto)}.`);
+        }
+      }
     } else if (res) {
       const data = await res.json();
       alert(data.mensaje || 'Error al guardar el movimiento.');
@@ -568,7 +663,7 @@ function editMovimiento(id) {
 
   // Seleccionar la categoría correcta
   const catId = m.categoriaId ? (m.categoriaId._id || m.categoriaId) : '';
-  document.getElementById('mov-categoria').value = catId;
+  populateCategoriaSelect(m.tipo, catId);
 }
 
 async function deleteMovimiento(id) {
@@ -685,7 +780,7 @@ async function loadFamilia() {
   tbody.innerHTML = '';
 
   if (usuarios.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center">No hay miembros registrados</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center">No hay miembros registrados</td></tr>';
     return;
   }
 
@@ -696,9 +791,10 @@ async function loadFamilia() {
       <td>${u.nombre}</td>
       <td>${u.email}</td>
       <td><span class="role-badge">${u.rol}</span></td>
+      <td>${u.bloqueado ? '<span class="role-badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3);"><i class="ph-bold ph-lock"></i> Bloqueado</span>' : '<span class="role-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);"><i class="ph-bold ph-check-circle"></i> Activo</span>'}</td>
       <td>${formatFecha(u.createdAt)}</td>
       <td>
-        ${!isSelf ? `<button class="btn-edit" onclick="resetPasswordMiembro('${u._id}', '${u.nombre}')"><i class="ph-bold ph-key"></i> Contraseña</button> <button class="btn-delete" onclick="eliminarMiembro('${u._id}')"><i class="ph-bold ph-trash"></i> Eliminar</button>` : '<span style="color:#64748b; font-size:12px;">Tú</span>'}
+        ${!isSelf ? `${u.bloqueado ? `<button class="btn-edit" style="background:#10b981; color:white;" onclick="desbloquearMiembro('${u._id}', '${u.nombre}')"><i class="ph-bold ph-lock-open"></i> Desbloquear</button> ` : ''}<button class="btn-edit" onclick="resetPasswordMiembro('${u._id}', '${u.nombre}')"><i class="ph-bold ph-key"></i> Contraseña</button> <button class="btn-delete" onclick="eliminarMiembro('${u._id}')"><i class="ph-bold ph-trash"></i> Eliminar</button>` : '<span style="color:#64748b; font-size:12px;">Tú</span>'}
       </td>
     `;
     tbody.appendChild(tr);
@@ -728,8 +824,16 @@ async function handleMiembro(e) {
     alert('Ingresa un correo electrónico válido.');
     return;
   }
-  if (password.length < 6) {
-    alert('La contraseña provisional debe tener al menos 6 caracteres.');
+  if (password.length < 8) {
+    alert('La contraseña provisional debe tener al menos 8 caracteres.');
+    return;
+  }
+  if (!/[A-Z]/.test(password)) {
+    alert('La contraseña provisional debe incluir al menos una letra mayúscula.');
+    return;
+  }
+  if (!/\d/.test(password)) {
+    alert('La contraseña provisional debe incluir al menos un número.');
     return;
   }
 
@@ -848,7 +952,8 @@ function renderGraficos() {
 
   const gastosPorCat = {};
   movMes.filter(m => m.tipo === 'Gasto').forEach(g => {
-    gastosPorCat[g.categoriaId.nombre] = (gastosPorCat[g.categoriaId.nombre] || 0) + g.monto;
+    const catNom = g.categoriaId ? (g.categoriaId.nombre || 'Sin categoría') : 'Sin categoría';
+    gastosPorCat[catNom] = (gastosPorCat[catNom] || 0) + g.monto;
   });
 
   const PALETA_DONUT = [
@@ -986,9 +1091,11 @@ function renderGraficos() {
 // ALERTAS DE PRESUPUESTO (HU08)
 // ========================================
 async function renderAlertasPresupuesto() {
-  const container = document.getElementById('presupuesto-alertas-container');
-  if (!container) return;
-  container.innerHTML = '';
+  const containerDashboard = document.getElementById('presupuesto-alertas-container');
+  const containerGastos = document.getElementById('presupuesto-alertas-container-gastos');
+  
+  if (containerDashboard) containerDashboard.innerHTML = '';
+  if (containerGastos) containerGastos.innerHTML = '';
 
   const currentMonth = globalMonth;
   const currentYear = globalYear;
@@ -999,45 +1106,56 @@ async function renderAlertasPresupuesto() {
 
   const gastos = movMes.filter(m => m.tipo === 'Gasto');
   const gastosPorCat = {};
+  const gastosPorCatId = {};
   gastos.forEach(g => {
-    gastosPorCat[g.categoriaId.nombre] = (gastosPorCat[g.categoriaId.nombre] || 0) + g.monto;
+    if (g.categoriaId) {
+      const catId = g.categoriaId._id ? String(g.categoriaId._id) : String(g.categoriaId);
+      const catNom = g.categoriaId.nombre || 'Sin categoría';
+      gastosPorCatId[catId] = (gastosPorCatId[catId] || 0) + g.monto;
+      gastosPorCat[catNom] = (gastosPorCat[catNom] || 0) + g.monto;
+    }
   });
 
   try {
     const res = await authFetch('/api/categorias');
-    if (!res.ok) return;
+    if (!res || !res.ok) return;
     const cats = await res.json();
     
     cats.forEach(c => {
       if (c.presupuestoMensual > 0) {
-        const gastado = gastosPorCat[c.nombre] || 0;
+        const cId = String(c._id);
+        const gastado = gastosPorCatId[cId] || gastosPorCat[c.nombre] || 0;
         const porcentaje = (gastado / c.presupuestoMensual) * 100;
 
         if (porcentaje >= 80) {
-            const div = document.createElement('div');
-            const isDanger = porcentaje >= 100;
-            div.style.padding = '14px 18px';
-            div.style.borderRadius = '10px';
-            div.style.backgroundColor = isDanger ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)';
-            div.style.border = `1px solid ${isDanger ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`;
-            div.style.borderLeft = `4px solid ${isDanger ? '#ef4444' : '#f59e0b'}`;
-            div.style.color = isDanger ? '#ef4444' : '#f59e0b';
-            div.style.fontWeight = '500';
-            div.style.fontSize = '14px';
-            div.style.display = 'flex';
-            div.style.alignItems = 'center';
-            div.style.gap = '10px';
-            div.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
-            
-            // Fix del "$" en el msj
-            let msj = isDanger 
-              ? `Excediste tu presupuesto para "<strong>${c.nombre}</strong>". Gastaste ${formatMonto(gastado)} de ${formatMonto(c.presupuestoMensual)}.`
-              : `Alerta: Estás al ${porcentaje.toFixed(1)}% de tu presupuesto para "<strong>${c.nombre}</strong>".`;
-              
-            const icon = isDanger ? '<i class="ph-fill ph-warning-circle" style="font-size:22px;"></i>' : '<i class="ph-fill ph-warning" style="font-size:22px;"></i>';
-            div.innerHTML = `${icon} <span>${msj}</span>`;
-            container.appendChild(div);
+          const isDanger = porcentaje >= 100;
+          const icon = isDanger ? '<i class="ph-fill ph-warning-circle" style="font-size:22px;"></i>' : '<i class="ph-fill ph-warning" style="font-size:22px;"></i>';
+          const msj = isDanger 
+            ? `Excediste tu presupuesto para "<strong>${c.nombre}</strong>". Gastaste ${formatMonto(gastado)} de un tope de ${formatMonto(c.presupuestoMensual)} (${porcentaje.toFixed(1)}%).`
+            : `Alerta: Estás al ${porcentaje.toFixed(1)}% de tu presupuesto para "<strong>${c.nombre}</strong>". Llevas gastado ${formatMonto(gastado)} de ${formatMonto(c.presupuestoMensual)}.`;
+
+          const alertCard = document.createElement('div');
+          alertCard.style.padding = '14px 18px';
+          alertCard.style.borderRadius = '10px';
+          alertCard.style.backgroundColor = isDanger ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)';
+          alertCard.style.border = `1px solid ${isDanger ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`;
+          alertCard.style.borderLeft = `4px solid ${isDanger ? '#ef4444' : '#f59e0b'}`;
+          alertCard.style.color = isDanger ? '#ef4444' : '#f59e0b';
+          alertCard.style.fontWeight = '500';
+          alertCard.style.fontSize = '14px';
+          alertCard.style.display = 'flex';
+          alertCard.style.alignItems = 'center';
+          alertCard.style.gap = '10px';
+          alertCard.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
+          alertCard.innerHTML = `${icon} <span>${msj}</span>`;
+
+          if (containerDashboard) {
+            containerDashboard.appendChild(alertCard.cloneNode(true));
           }
+          if (containerGastos) {
+            containerGastos.appendChild(alertCard.cloneNode(true));
+          }
+        }
       }
     });
   } catch (err) {
@@ -1302,8 +1420,16 @@ async function guardarPerfil(e) {
   const avatar = document.getElementById('perfil-avatar')?.value || 'padre';
 
   if (newPassword) {
-    if (newPassword.length < 6) {
-      alert('La nueva contraseña debe tener al menos 6 caracteres.');
+    if (newPassword.length < 8) {
+      alert('La nueva contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword)) {
+      alert('La nueva contraseña debe incluir al menos una letra mayúscula.');
+      return;
+    }
+    if (!/\d/.test(newPassword)) {
+      alert('La nueva contraseña debe incluir al menos un número.');
       return;
     }
     if (!currentPassword) {
@@ -1345,11 +1471,11 @@ async function guardarPerfil(e) {
 
 // === RESTABLECER CONTRASEÑA DE MIEMBRO (UC11 - SysAdmin) ===
 async function resetPasswordMiembro(userId, nombre) {
-  const newPassword = prompt(`Ingresa la nueva contraseña para ${nombre} (mínimo 6 caracteres):`);
+  const newPassword = prompt(`Ingresa la nueva contraseña para ${nombre} (mínimo 8 caracteres, números y al menos 1 mayúscula):`);
   if (!newPassword) return;
 
-  if (newPassword.length < 6) {
-    alert('La contraseña debe tener al menos 6 caracteres.');
+  if (newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/\d/.test(newPassword)) {
+    alert('La contraseña debe tener al menos 8 caracteres, incluir números y al menos una letra mayúscula.');
     return;
   }
 
@@ -1372,3 +1498,28 @@ async function resetPasswordMiembro(userId, nombre) {
     alert('Error de conexión al restablecer contraseña.');
   }
 }
+
+// === DESBLOQUEAR CUENTA DE MIEMBRO (Admin) ===
+async function desbloquearMiembro(userId, nombre) {
+  if (!confirm(`¿Deseas desbloquear el acceso para ${nombre}?`)) return;
+
+  try {
+    const res = await authFetch(`/api/usuarios/${userId}/desbloquear`, {
+      method: 'PUT'
+    });
+
+    if (!res) return;
+
+    const data = await res.json();
+    if (res.ok) {
+      alert(data.mensaje || 'Cuenta desbloqueada exitosamente.');
+      loadFamilia();
+    } else {
+      alert(data.mensaje || 'Error al desbloquear usuario.');
+    }
+  } catch (error) {
+    console.error('Error al desbloquear:', error);
+    alert('Error de conexión al desbloquear usuario.');
+  }
+}
+

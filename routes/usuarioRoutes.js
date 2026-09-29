@@ -37,8 +37,14 @@ router.post('/', auth, isAdmin, async (req, res) => {
       return res.status(400).json({ mensaje: 'Debes proporcionar un correo electrónico válido.' });
     }
 
-    if (!password || String(password).length < 6) {
-      return res.status(400).json({ mensaje: 'La contraseña provisional debe tener al menos 6 caracteres.' });
+    if (!password || String(password).length < 8) {
+      return res.status(400).json({ mensaje: 'La contraseña provisional debe tener al menos 8 caracteres.' });
+    }
+    if (!/[A-Z]/.test(password)) {
+      return res.status(400).json({ mensaje: 'La contraseña provisional debe incluir al menos una letra mayúscula.' });
+    }
+    if (!/\d/.test(password)) {
+      return res.status(400).json({ mensaje: 'La contraseña provisional debe incluir al menos un número.' });
     }
 
     // Verificar si el correo ya existe
@@ -115,8 +121,14 @@ router.put('/me', auth, async (req, res) => {
       if (!isMatch) {
          return res.status(400).json({ mensaje: 'La contraseña actual es incorrecta.' });
       }
-      if (password.length < 6) {
-        return res.status(400).json({ mensaje: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+      if (password.length < 8) {
+        return res.status(400).json({ mensaje: 'La nueva contraseña debe tener al menos 8 caracteres.' });
+      }
+      if (!/[A-Z]/.test(password)) {
+        return res.status(400).json({ mensaje: 'La nueva contraseña debe incluir al menos una letra mayúscula.' });
+      }
+      if (!/\d/.test(password)) {
+        return res.status(400).json({ mensaje: 'La nueva contraseña debe incluir al menos un número.' });
       }
       const salt = await bcrypt.genSalt(10);
       usuario.password = await bcrypt.hash(password, salt);
@@ -146,8 +158,14 @@ router.put('/:id/reset-password', auth, isAdmin, async (req, res) => {
   try {
     const { newPassword } = req.body;
 
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ mensaje: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ mensaje: 'La nueva contraseña debe tener al menos 8 caracteres.' });
+    }
+    if (!/[A-Z]/.test(newPassword)) {
+      return res.status(400).json({ mensaje: 'La nueva contraseña debe incluir al menos una letra mayúscula.' });
+    }
+    if (!/\d/.test(newPassword)) {
+      return res.status(400).json({ mensaje: 'La nueva contraseña debe incluir al menos un número.' });
     }
 
     const usuario = await Usuario.findOne({ _id: req.params.id, grupoId: req.usuario.grupoId });
@@ -157,11 +175,33 @@ router.put('/:id/reset-password', auth, isAdmin, async (req, res) => {
 
     const salt = await bcrypt.genSalt(10);
     usuario.password = await bcrypt.hash(newPassword, salt);
+    usuario.bloqueado = false;
+    usuario.intentosFallidos = 0;
+    usuario.fechaBloqueo = null;
     await usuario.save();
 
-    res.json({ mensaje: `Contraseña de ${usuario.nombre} restablecida con éxito.` });
+    res.json({ mensaje: `Contraseña de ${usuario.nombre} restablecida y cuenta desbloqueada con éxito.` });
   } catch (error) {
     res.status(500).json({ mensaje: 'Error al restablecer contraseña', error: error.message });
+  }
+});
+
+// [PUT] /api/usuarios/:id/desbloquear - Desbloquear cuenta de un miembro (Solo Admin)
+router.put('/:id/desbloquear', auth, isAdmin, async (req, res) => {
+  try {
+    const usuario = await Usuario.findOne({ _id: req.params.id, grupoId: req.usuario.grupoId });
+    if (!usuario) {
+      return res.status(404).json({ mensaje: 'Usuario no encontrado en tu grupo.' });
+    }
+
+    usuario.bloqueado = false;
+    usuario.intentosFallidos = 0;
+    usuario.fechaBloqueo = null;
+    await usuario.save();
+
+    res.json({ mensaje: `Cuenta de ${usuario.nombre} desbloqueada exitosamente.` });
+  } catch (error) {
+    res.status(500).json({ mensaje: 'Error al desbloquear usuario', error: error.message });
   }
 });
 

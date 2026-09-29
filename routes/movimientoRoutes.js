@@ -111,7 +111,49 @@ router.post('/', auth, async (req, res) => {
     });
 
     await nuevoMovimiento.save();
-    res.status(201).json({ mensaje: 'Movimiento registrado con éxito', movimiento: nuevoMovimiento });
+
+    // Calcular alerta de presupuesto si es un Gasto
+    let alertaPresupuesto = null;
+    if (tipo === 'Gasto' && categoriaExiste.presupuestoMensual > 0) {
+      const fechaBase = nuevoMovimiento.fecha;
+      const primerDia = new Date(fechaBase.getFullYear(), fechaBase.getMonth(), 1);
+      const ultimoDia = new Date(fechaBase.getFullYear(), fechaBase.getMonth() + 1, 0, 23, 59, 59, 999);
+
+      const resumen = await Movimiento.aggregate([
+        {
+          $match: {
+            grupoId: req.usuario.grupoId,
+            categoriaId: categoriaExiste._id,
+            tipo: 'Gasto',
+            fecha: { $gte: primerDia, $lte: ultimoDia }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$monto' }
+          }
+        }
+      ]);
+
+      const gastado = resumen[0] ? resumen[0].total : 0;
+      const porcentaje = (gastado / categoriaExiste.presupuestoMensual) * 100;
+      if (porcentaje >= 80) {
+        alertaPresupuesto = {
+          categoria: categoriaExiste.nombre,
+          gastado,
+          presupuesto: categoriaExiste.presupuestoMensual,
+          porcentaje: Number(porcentaje.toFixed(1)),
+          excedido: porcentaje >= 100
+        };
+      }
+    }
+
+    res.status(201).json({
+      mensaje: 'Movimiento registrado con éxito',
+      movimiento: nuevoMovimiento,
+      alertaPresupuesto
+    });
   } catch (error) {
     res.status(500).json({ mensaje: 'Error al registrar movimiento', error: error.message });
   }

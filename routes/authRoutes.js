@@ -20,8 +20,14 @@ router.post('/registro', async (req, res) => {
       return res.status(400).json({ mensaje: 'Ingresa un correo electrónico válido.' });
     }
 
-    if (!password || String(password).length < 6) {
-      return res.status(400).json({ mensaje: 'La contraseña debe tener al menos 6 caracteres.' });
+    if (!password || String(password).length < 8) {
+      return res.status(400).json({ mensaje: 'La contraseña debe tener al menos 8 caracteres.' });
+    }
+    if (!/[A-Z]/.test(password)) {
+      return res.status(400).json({ mensaje: 'La contraseña debe incluir al menos una letra mayúscula.' });
+    }
+    if (!/\d/.test(password)) {
+      return res.status(400).json({ mensaje: 'La contraseña debe incluir al menos un número.' });
     }
 
     // 1. Verificar si el email ya está en uso
@@ -61,16 +67,50 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    const emailLimpio = email ? String(email).trim().toLowerCase() : '';
+
     // 1. Buscar al usuario
-    const usuario = await Usuario.findOne({ email });
+    const usuario = await Usuario.findOne({ email: emailLimpio });
     if (!usuario) {
       return res.status(400).json({ mensaje: 'Credenciales inválidas' });
     }
 
-    // 2. Comparar la contraseña proporcionada con el hash de la BD
+    // 2. Verificar si la cuenta se encuentra bloqueada
+    if (usuario.bloqueado) {
+      return res.status(403).json({
+        mensaje: 'Cuenta bloqueada por contraseña incorrecta, favor comunicarse al +569 1234 5678.',
+        bloqueado: true
+      });
+    }
+
+    // 3. Comparar la contraseña proporcionada con el hash de la BD
     const esPasswordValida = await bcrypt.compare(password, usuario.password);
     if (!esPasswordValida) {
-      return res.status(400).json({ mensaje: 'Credenciales inválidas' });
+      usuario.intentosFallidos = (usuario.intentosFallidos || 0) + 1;
+
+      if (usuario.intentosFallidos >= 3) {
+        usuario.bloqueado = true;
+        usuario.fechaBloqueo = new Date();
+        await usuario.save();
+        return res.status(403).json({
+          mensaje: 'Cuenta bloqueada por contraseña incorrecta, favor comunicarse al +569 1234 5678.',
+          bloqueado: true
+        });
+      }
+
+      await usuario.save();
+      const restantes = 3 - usuario.intentosFallidos;
+      return res.status(400).json({
+        mensaje: `Contraseña incorrecta. Te queda${restantes === 1 ? '' : 'n'} ${restantes} intento${restantes === 1 ? '' : 's'} antes de que tu cuenta sea bloqueada.`,
+        intentosRestantes: restantes,
+        intentosFallidos: usuario.intentosFallidos
+      });
+    }
+
+    // 4. Si la contraseña es correcta, reiniciar contador de intentos fallidos si tenía
+    if (usuario.intentosFallidos > 0) {
+      usuario.intentosFallidos = 0;
+      await usuario.save();
     }
 
     // 3. Crear el Token JWT con los datos relevantes (ID, Grupo y Rol)

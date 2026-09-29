@@ -31,6 +31,18 @@ const usuarioSchema = new mongoose.Schema({
     type: String,
     enum: ['padre', 'madre', 'hijo', 'default'],
     default: 'default'
+  },
+  intentosFallidos: {
+    type: Number,
+    default: 0
+  },
+  bloqueado: {
+    type: Boolean,
+    default: false
+  },
+  fechaBloqueo: {
+    type: Date,
+    default: null
   }
 }, { timestamps: true });
 
