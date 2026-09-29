@@ -1,4 +1,4 @@
-# 💰 SGF — Sistema de Gestión Financiera Familiar
+# SGF — Sistema de Gestión Financiera Familiar
 
 > **Proyecto MVP — Ingeniería de Software INACAP 2026**
 
@@ -12,27 +12,27 @@ Plataforma web para la administración y control financiero del hogar. Permite r
 
 ---
 
-## 🌐 Demo en Vivo
+## Demo en Vivo
 Puedes acceder a la versión desplegada en producción directamente desde:
 👉 **[https://sgf-proyecto.vercel.app/](https://sgf-proyecto.vercel.app/)**
 
 ---
 
-## ✨ Características Principales
+## Características Principales
 
-- 🔐 **Autenticación Segura:** Registro e inicio de sesión con JWT (JSON Web Tokens) y contraseñas cifradas con `bcryptjs`.
-- 📊 **Panel Financiero (Dashboard):** Visualización en tiempo real de ingresos totales, gastos totales, balance neto y barra de cumplimiento de presupuesto mensual.
-- 💳 **Gestión de Transacciones:** Registro dinámico de ingresos y gastos con selección de categorías, montos y fechas automáticas ajustadas a la zona horaria local.
-- 📈 **Gráficos Interactivos (Chart.js):** 
+- **Autenticación Segura:** Registro e inicio de sesión con JWT (JSON Web Tokens) y contraseñas cifradas con `bcryptjs`.
+- **Panel Financiero (Dashboard):** Visualización en tiempo real de ingresos totales, gastos totales, balance neto y barra de cumplimiento de presupuesto mensual.
+- **Gestión de Transacciones:** Registro dinámico de ingresos y gastos con selección de categorías, montos y fechas automáticas ajustadas a la zona horaria local.
+- **Gráficos Interactivos (Chart.js):** 
   - Gráfico de dona con la distribución porcentual de gastos por categoría.
   - Gráfico de barras con la comparativa mensual de ingresos vs. gastos.
-- ⚠️ **Alertas Inteligentes:** Notificaciones automáticas cuando los gastos superan el límite de presupuesto establecido.
-- 📑 **Exportación de Reportes:** Generación inmediata de reportes en formatos **PDF** y **Excel (XLSX)**.
-- 👤 **Gestión de Perfil:** Personalización de datos de usuario, asignación de rol familiar y selección de avatar interactivo (Padre, Madre, Hijo).
+- **Alertas Inteligentes:** Notificaciones automáticas cuando los gastos superan el límite de presupuesto establecido.
+- **Exportación de Reportes:** Generación inmediata de reportes en formatos **PDF** y **Excel (XLSX)**.
+- **Gestión de Perfil:** Personalización de datos de usuario, asignación de rol familiar y selección de avatar interactivo (Padre, Madre, Hijo).
 
 ---
 
-## 🛠️ Stack Tecnológico
+## Stack Tecnológico
 
 - **Frontend:** HTML5, CSS3, Tailwind CSS, FontAwesome, Chart.js, jsPDF, SheetJS (XLSX).
 - **Backend:** Node.js, Express.js.
@@ -41,7 +41,7 @@ Puedes acceder a la versión desplegada en producción directamente desde:
 
 ---
 
-## 🚀 Ejecución en Entorno Local
+## Ejecución en Entorno Local
 
 Si deseas ejecutar el proyecto localmente en tu equipo:
 
@@ -72,7 +72,7 @@ Abre tu navegador en `http://localhost:3000`.
 
 ---
 
-## 📂 Estructura del Proyecto
+## Estructura del Proyecto
 
 ```text
 SGF-Proyecto/
@@ -87,5 +87,5 @@ SGF-Proyecto/
 
 ---
 
-## 👥 Equipo de Desarrollo
+## Equipo de Desarrollo
 Proyecto desarrollado para la asignatura de **Ingeniería de Software** — **INACAP 2026**.
